@@ -360,6 +360,8 @@ export default function DashboardPage() {
   const [dados, setDados] = useState<DashboardRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingDados, setLoadingDados] = useState(false);
+  const [atualizandoView, setAtualizandoView] = useState(false);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [buscaCliente, setBuscaCliente] = useState("");
   const [filtroStatus, setFiltroStatus] = useState("");
   type SortCol = "cod" | "cliente" | "valPago" | "valAberto" | "valAtualizado";
@@ -463,7 +465,7 @@ export default function DashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, [deveCarregar, empresaSelecionada?.nome_curto, nomesCurtosGrupo.join(",")]);
+  }, [deveCarregar, empresaSelecionada?.nome_curto, nomesCurtosGrupo.join(","), refreshTrigger]);
 
   const dadosVisiveis = useMemo(
     () =>
@@ -530,6 +532,18 @@ export default function DashboardPage() {
   function handleGrupoChange(e: React.ChangeEvent<HTMLSelectElement>) {
     setGrupoId(e.target.value);
     setEmpresaId("");
+  }
+
+  async function forcarAtualizacaoView() {
+    setAtualizandoView(true);
+    const { error } = await supabase.rpc("refresh_dashboard_receber");
+    setAtualizandoView(false);
+    if (error) {
+      console.error(error);
+      alert("Erro ao atualizar a base de dados. Tente novamente.");
+      return;
+    }
+    setRefreshTrigger((t) => t + 1);
   }
 
   type GrupoItem = {
@@ -1239,6 +1253,15 @@ export default function DashboardPage() {
             ))}
           </select>
         </div>
+        <button
+          type="button"
+          onClick={forcarAtualizacaoView}
+          disabled={atualizandoView}
+          className="px-4 py-2 rounded bg-slate-600 text-white text-sm font-medium hover:bg-slate-500 disabled:opacity-60"
+          title="Atualiza a base de dados da relação (view materializada) com os dados mais recentes de movimentos."
+        >
+          {atualizandoView ? "Atualizando…" : "Forçar atualização"}
+        </button>
       </div>
 
       {grupoId && !loadingDados && dadosVisiveis.length > 0 && (
