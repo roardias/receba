@@ -1,0 +1,16 @@
+[Unit]
+Description=Scheduler Receba - Sync Omie automático
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+# Ajuste WorkingDirectory e EnvironmentFile para o caminho real do projeto
+WorkingDirectory=/var/www/Receba
+ExecStart=/usr/bin/python3 scheduler_sync.py
+Restart=always
+RestartSec=10
+EnvironmentFile=/var/www/Receba/.env
+
+[Install]
+WantedBy=multi-user.target

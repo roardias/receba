@@ -1,0 +1,10 @@
+.env
+.env.local
+exemplo_empresas.csv
+frontend/.env.local
+frontend/node_modules/
+frontend/.next/
+__pycache__/
+*.pyc
+.venv/
+venv/
