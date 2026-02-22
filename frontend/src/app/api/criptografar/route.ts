@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "valor inválido" }, { status: 400 });
     }
 
-    const key = process.env.ENCRYPTION_KEY;
+    const key = (process.env.ENCRYPTION_KEY ?? "").trim();
     if (!key) {
       return NextResponse.json({ error: "ENCRYPTION_KEY não configurada" }, { status: 500 });
     }

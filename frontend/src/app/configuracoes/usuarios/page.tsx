@@ -46,6 +46,7 @@ export default function UsuariosPage() {
   const [visibilidadeGrupos, setVisibilidadeGrupos] = useState<Set<string>>(new Set());
   const [visibilidadeEmpresas, setVisibilidadeEmpresas] = useState<Set<string>>(new Set());
   const [visibilidadeCategorias, setVisibilidadeCategorias] = useState<Set<string>>(new Set());
+  const [buscaCategoria, setBuscaCategoria] = useState("");
   const [visibilidadeSalvando, setVisibilidadeSalvando] = useState(false);
   const [permissoesUserId, setPermissoesUserId] = useState<string | null>(null);
   const [permissoesLoading, setPermissoesLoading] = useState(false);
@@ -189,6 +190,7 @@ export default function UsuariosPage() {
 
   async function abrirVisibilidade(uid: string) {
     setVisibilidadeUserId(uid);
+    setBuscaCategoria("");
     setVisibilidadeLoading(true);
     setVisibilidadeGrupos(new Set());
     setVisibilidadeEmpresas(new Set());
@@ -268,6 +270,11 @@ export default function UsuariosPage() {
       .filter(Boolean);
     return Array.from(new Set(descricoes)).sort();
   })();
+
+  const buscaCategoriaNorm = buscaCategoria.trim().toLowerCase();
+  const categoriasVisiveisFiltradas = buscaCategoriaNorm
+    ? categoriasVisiveis.filter((desc) => desc.toLowerCase().includes(buscaCategoriaNorm))
+    : categoriasVisiveis;
 
   async function salvarVisibilidade() {
     if (!visibilidadeUserId) return;
@@ -653,8 +660,15 @@ export default function UsuariosPage() {
                         ? "Exibindo apenas categorias das empresas/grupos selecionados acima."
                         : "Selecione grupos ou empresas acima para filtrar as categorias listadas."}
                     </p>
+                    <input
+                      type="text"
+                      value={buscaCategoria}
+                      onChange={(e) => setBuscaCategoria(e.target.value)}
+                      placeholder="Buscar categoria..."
+                      className="w-full px-3 py-2 border border-slate-300 rounded mb-2 text-sm placeholder:text-slate-400"
+                    />
                     <div className="flex flex-wrap gap-2 max-h-32 overflow-auto border rounded p-2 bg-slate-50">
-                      {categoriasVisiveis.map((desc) => (
+                      {categoriasVisiveisFiltradas.map((desc) => (
                         <label key={desc} className="inline-flex items-center gap-1.5 cursor-pointer text-sm">
                           <input
                             type="checkbox"
@@ -665,11 +679,13 @@ export default function UsuariosPage() {
                           {desc}
                         </label>
                       ))}
-                      {categoriasVisiveis.length === 0 && (
+                      {categoriasVisiveisFiltradas.length === 0 && (
                         <span className="text-slate-500 text-sm">
-                          {visibilidadeGrupos.size > 0 || visibilidadeEmpresas.size > 0
-                            ? "Nenhuma categoria nas empresas/grupos selecionados."
-                            : "Nenhuma categoria (conta_receita=S)."}
+                          {buscaCategoriaNorm
+                            ? "Nenhuma categoria encontrada para essa busca."
+                            : visibilidadeGrupos.size > 0 || visibilidadeEmpresas.size > 0
+                              ? "Nenhuma categoria nas empresas/grupos selecionados."
+                              : "Nenhuma categoria (conta_receita=S)."}
                         </span>
                       )}
                     </div>

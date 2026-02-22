@@ -14,7 +14,7 @@ function deriveFernetKey(password: string): string {
 
 /** Descriptografa um valor cifrado com a mesma chave usada em /api/criptografar. Uso apenas no servidor. */
 export function decrypt(encrypted: string): string {
-  const key = process.env.ENCRYPTION_KEY;
+  const key = (process.env.ENCRYPTION_KEY ?? "").trim();
   if (!key) throw new Error("ENCRYPTION_KEY não configurada");
   const fernetKey = deriveFernetKey(key);
   const secret = new fernet.Secret(fernetKey);
