@@ -194,9 +194,9 @@ export default function HistoricoCobrancasPage() {
       if (!map.has(chave)) map.set(chave, []);
       map.get(chave)!.push(c);
     }
-    for (const arr of map.values()) {
+    Array.from(map.values()).forEach((arr) => {
       arr.sort((a, b) => b.created_at.localeCompare(a.created_at));
-    }
+    });
     return Array.from(map.entries()).sort((a, b) => {
       const nomeA = (a[1][0]?.cliente_nome ?? "").toLowerCase();
       const nomeB = (b[1][0]?.cliente_nome ?? "").toLowerCase();
