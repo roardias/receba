@@ -64,7 +64,7 @@ function parsearPlanilha(file: File): Promise<LinhaImport[]> {
         if (file.name.toLowerCase().endsWith(".csv")) {
           const text = typeof data === "string" ? data : new TextDecoder("utf-8").decode(data as ArrayBuffer);
           const sep = text.includes(";") ? ";" : ",";
-          const parsed = Papa.parse<string[]>(text, {
+          const parsed = Papa.parse(text, {
             delimiter: sep,
             skipEmptyLines: true,
             quoteChar: '"',
