@@ -79,7 +79,7 @@ function parsearPlanilha(file: File): Promise<LinhaImport[]> {
             resolve([]);
             return;
           }
-          const headers = rows[0].map((h) => String(h ?? "").trim());
+          const headers = rows[0].map((h: unknown) => String(h ?? "").trim());
           const idxId = encontrarColuna(headers, ["id", "ID"]);
           const idxGrupo = encontrarColuna(headers, ["grupo de empresas", "grupo", "grupo_empresas"]);
           const idxRazao = encontrarColuna(headers, ["razao social", "razao_social", "razaosocial"]);
