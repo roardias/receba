@@ -110,7 +110,7 @@ function parsearPlanilha(file: File): Promise<LinhaImport[]> {
             resolve([]);
             return;
           }
-          const headerRow = json[0] as unknown[];
+          const headerRow = json[0] as unknown as unknown[];
           const headers = headerRow.map((h) => String(h ?? ""));
           const idxId = encontrarColuna(headers, ["id", "ID"]);
           const idxGrupo = encontrarColuna(headers, ["grupo de empresas", "grupo", "grupo_empresas"]);
@@ -121,7 +121,7 @@ function parsearPlanilha(file: File): Promise<LinhaImport[]> {
             return;
           }
           for (let i = 1; i < json.length; i++) {
-            const row = json[i] as unknown[];
+            const row = json[i] as unknown as unknown[];
             const idPlanilha = String(row[idxId] ?? "").trim();
             const grupoEmpresas = String(row[idxGrupo] ?? "").trim();
             const razaoSocial = idxRazao >= 0 ? (String(row[idxRazao] ?? "").trim() || null) : null;
