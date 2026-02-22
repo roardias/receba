@@ -10,6 +10,7 @@ type Empresa = {
   grupo_id: string | null;
   razao_social: string;
   nome_curto: string;
+  cnpj: string | null;
   app_key: string | null;
   app_secret_encrypted: string | null;
   ativo: boolean;
@@ -25,6 +26,7 @@ export default function EmpresasPage() {
   const [editando, setEditando] = useState<Empresa | null>(null);
   const [razaoSocial, setRazaoSocial] = useState("");
   const [nomeCurto, setNomeCurto] = useState("");
+  const [cnpj, setCnpj] = useState("");
   const [grupoId, setGrupoId] = useState<string>("");
   const [appKey, setAppKey] = useState("");
   const [appSecret, setAppSecret] = useState("");
@@ -51,6 +53,7 @@ export default function EmpresasPage() {
     const payload: Record<string, unknown> = {
       razao_social: razaoSocial.trim(),
       nome_curto: nomeCurto.trim(),
+      cnpj: cnpj.trim() || null,
       grupo_id: grupoId || null,
       app_key: appKey.trim() || null,
     };
@@ -81,6 +84,7 @@ export default function EmpresasPage() {
   function limparForm() {
     setRazaoSocial("");
     setNomeCurto("");
+    setCnpj("");
     setGrupoId("");
     setAppKey("");
     setAppSecret("");
@@ -97,6 +101,7 @@ export default function EmpresasPage() {
     setEditando(e);
     setRazaoSocial(e.razao_social);
     setNomeCurto(e.nome_curto);
+    setCnpj(e.cnpj || "");
     setGrupoId(e.grupo_id || "");
     setAppKey(e.app_key || "");
     setAppSecret("");
@@ -128,6 +133,16 @@ export default function EmpresasPage() {
             onChange={(e) => setRazaoSocial(e.target.value)}
             className="w-full px-3 py-2 border rounded"
             required
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">CNPJ</label>
+          <input
+            type="text"
+            value={cnpj}
+            onChange={(e) => setCnpj(e.target.value)}
+            placeholder="00.000.000/0001-00 ou apenas números"
+            className="w-full px-3 py-2 border rounded"
           />
         </div>
         <div>
@@ -199,6 +214,7 @@ export default function EmpresasPage() {
         <thead>
           <tr className="border-b bg-slate-100">
             <th className="text-left p-2">Razão Social</th>
+            <th className="text-left p-2">CNPJ</th>
             <th className="text-left p-2">Nome Curto</th>
             <th className="text-left p-2">Grupo</th>
             <th className="text-left p-2">API</th>
@@ -209,6 +225,7 @@ export default function EmpresasPage() {
           {empresas.map((e) => (
             <tr key={e.id} className="border-b">
               <td className="p-2">{e.razao_social}</td>
+              <td className="p-2">{e.cnpj || "—"}</td>
               <td className="p-2">{e.nome_curto}</td>
               <td className="p-2">{(e as Empresa & { grupos: { nome: string } | null }).grupos?.nome || "—"}</td>
               <td className="p-2">{e.app_key ? "Configurado" : "—"}</td>

@@ -45,7 +45,7 @@ Depois disso, o “backend” (dados + auth) já está online.
    | `NEXT_PUBLIC_SUPABASE_URL` | URL do projeto Supabase |
    | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Chave anon do Supabase |
    | `SUPABASE_SERVICE_ROLE_KEY` | Chave service_role (para admin de usuários) |
-   | `ENCRYPTION_KEY` | Mesma chave que você usa no `.env` local (e-mail, etc.) |
+   | `ENCRYPTION_KEY` | **Obrigatório para e-mail.** Mesmo valor do `.env` local (copie e cole). Usada para descriptografar o Client Secret do Microsoft 365. Se faltar, ao enviar e-mail aparece erro de descriptografia. |
 
 4. Faça o deploy. A Vercel vai gerar uma URL tipo `seu-projeto.vercel.app`.
 
@@ -109,7 +109,14 @@ Depois disso, o sistema fica acessível pela URL da Vercel, os dados no Supabase
 - [ ] Migrations do Supabase executadas na ordem
 - [ ] Variáveis de ambiente do frontend (Vercel) preenchidas
 - [ ] Variáveis do scheduler (Railway/Render) preenchidas
-- [ ] `ENCRYPTION_KEY` igual no frontend e no scheduler
+- [ ] `ENCRYPTION_KEY` **no Vercel** igual à do `.env` local (obrigatório para envio de e-mail)
 - [ ] Se usar domínio próprio: configurar na Vercel e, se quiser, no Supabase (Auth URL permitidas)
+
+### Erro "Não foi possível descriptografar o Client Secret"
+
+1. No **Vercel** → seu projeto → **Settings** → **Environment Variables**.
+2. Adicione (ou edite) **ENCRYPTION_KEY** com **exatamente** o mesmo valor que está no seu arquivo `.env` local (a linha `ENCRYPTION_KEY=...`).
+3. Faça um **Redeploy** (Deployments → ⋯ no último deploy → Redeploy) para as variáveis atualizadas valerem.
+4. Se o Client Secret foi salvo no ambiente local com uma chave, use essa mesma chave no Vercel. Se trocar a chave, será preciso editar a configuração de e-mail e salvar o Client Secret de novo (criptografado com a nova chave).
 
 Se quiser, posso te ajudar a montar o `requirements.txt` do scheduler ou a lista exata de variáveis para cada serviço.

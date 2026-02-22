@@ -90,12 +90,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (!process.env.ENCRYPTION_KEY?.trim()) {
+      return NextResponse.json(
+        {
+          error:
+            "ENCRYPTION_KEY não configurada. No Vercel: Settings → Environment Variables → adicione ENCRYPTION_KEY com o mesmo valor do seu .env local (a chave usada ao salvar o Client Secret).",
+        },
+        { status: 500 }
+      );
+    }
+
     let clientSecret: string;
     try {
       clientSecret = decrypt(c.client_secret_encrypted);
     } catch {
       return NextResponse.json(
-        { error: "Não foi possível descriptografar o Client Secret. Verifique ENCRYPTION_KEY." },
+        {
+          error:
+            "Não foi possível descriptografar o Client Secret. Confira se ENCRYPTION_KEY no Vercel é exatamente a mesma do .env local (copie e cole, sem espaços extras).",
+        },
         { status: 500 }
       );
     }
