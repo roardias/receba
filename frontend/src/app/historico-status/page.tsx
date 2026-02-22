@@ -228,7 +228,6 @@ export default function HistoricoStatusPage() {
             placeholder="Números do documento ou nome do cliente / grupo"
             className="px-3 py-2 border rounded min-w-[280px]"
           />
-          <p className="text-xs text-slate-500 mt-0.5">Pode usar CNPJ/CPF com ou sem pontos, vírgulas e barras. Busca também por nome e grupo.</p>
         </div>
         <button
           type="button"
@@ -247,6 +246,7 @@ export default function HistoricoStatusPage() {
           Relatório PDF
         </button>
       </div>
+      <p className="text-xs text-slate-500 mt-1">Pode usar CNPJ/CPF com ou sem pontos, vírgulas e barras. Busca também por nome e grupo.</p>
 
       <div className="mt-4 overflow-x-auto border rounded">
         {loading ? (
