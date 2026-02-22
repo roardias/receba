@@ -34,10 +34,10 @@ Depois disso, o “backend” (dados + auth) já está online.
 **Passos:**
 
 1. Crie uma conta em [vercel.com](https://vercel.com) e conecte seu repositório GitHub (ou faça upload do projeto).
-2. Configure o projeto:
-   - **Root Directory:** `frontend` (a pasta do Next.js está dentro de `frontend`).
-   - **Build Command:** `npm run build`
-   - **Output:** deixe o padrão (Next.js).
+2. **Importante:** Configure o **Root Directory**:
+   - Em **Settings** → **General** → **Root Directory** → **Edit** → digite **`frontend`** → **Save**.
+   - Sem isso o Vercel procura o Next.js na raiz do repo e falha com "No Next.js version detected".
+   - Build Command: `npm run build` (padrão). Output: Next.js (padrão).
 3. Em **Settings → Environment Variables** adicione (para Production e Preview):
 
    | Nome | Valor |

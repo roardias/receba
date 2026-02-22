@@ -174,7 +174,7 @@ export async function POST(request: NextRequest) {
       subject: subject.trim(),
       body: {
         contentType: useHtml ? "HTML" : "Text",
-        content: useHtml ? bodyHtml.trim() : ((content && content.trim()) ? content.trim() : ""),
+        content: useHtml ? (bodyHtml ?? "").trim() : ((content && content.trim()) ? content.trim() : ""),
       },
       toRecipients: addresses.map((address) => ({
         emailAddress: { address },
