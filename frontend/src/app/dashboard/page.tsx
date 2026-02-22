@@ -607,7 +607,7 @@ export default function DashboardPage() {
           .from("config_email_empresas")
           .select("config_email_id")
           .in("empresa_id", contextEmpresaIds);
-        const configIds = [...new Set((vinculos || []).map((v) => (v as { config_email_id: string }).config_email_id))];
+        const configIds = Array.from(new Set((vinculos || []).map((v) => (v as { config_email_id: string }).config_email_id)));
         if (configIds.length > 0) {
           const { data: configs } = await supabase
             .from("config_email")
