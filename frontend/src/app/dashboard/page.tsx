@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import * as XLSX from "xlsx";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -366,6 +367,8 @@ export default function DashboardPage() {
   const [sortAsc, setSortAsc] = useState(false);
   const [statusPorChave, setStatusPorChave] = useState<Record<string, { status: string; data_negociado: string | null }>>({});
   const [statusDashboard, setStatusDashboard] = useState<Record<string, { status: string; data_negociado: string | null }>>({});
+  /** Data do último contato (cobranças realizadas) por chave "cod|cnpj" (apenas dígitos no cnpj). */
+  const [ultimoContatoPorChave, setUltimoContatoPorChave] = useState<Record<string, string>>({});
 
   function handleSort(col: SortCol) {
     setSortCol(col);
@@ -491,6 +494,39 @@ export default function DashboardPage() {
     });
   }, [dadosVisiveis]);
 
+  function chaveContato(cod: string | null, cnpjCpf: string | null): string {
+    const codNorm = (cod ?? "").trim().toLowerCase();
+    const cnpjNorm = (cnpjCpf ?? "").replace(/\D/g, "");
+    return `${codNorm}|${cnpjNorm}`;
+  }
+
+  useEffect(() => {
+    if (!grupoId) {
+      setUltimoContatoPorChave({});
+      return;
+    }
+    let q = supabase
+      .from("cobrancas_realizadas")
+      .select("cod_cliente, cnpj_cpf, created_at")
+      .eq("grupo_id", grupoId);
+    if (empresaSelecionada) {
+      q = q.eq("empresa_id", empresaSelecionada.id);
+    }
+    q.then(({ data, error }) => {
+      if (error) {
+        setUltimoContatoPorChave({});
+        return;
+      }
+      const map: Record<string, string> = {};
+      (data || []).forEach((r: { cod_cliente: string | null; cnpj_cpf: string | null; created_at: string }) => {
+        const key = chaveContato(r.cod_cliente, r.cnpj_cpf);
+        const prev = map[key];
+        if (!prev || r.created_at > prev) map[key] = r.created_at;
+      });
+      setUltimoContatoPorChave(map);
+    });
+  }, [grupoId, empresaSelecionada?.id]);
+
   function handleGrupoChange(e: React.ChangeEvent<HTMLSelectElement>) {
     setGrupoId(e.target.value);
     setEmpresaId("");
@@ -579,6 +615,60 @@ export default function DashboardPage() {
     }
     return sortAsc ? cmp : -cmp;
   });
+
+  function exportarDashboardExcel() {
+    const header = [
+      "Nome fantasia",
+      "Razão social",
+      "Grupo",
+      "Cód.",
+      "CNPJ/CPF",
+      "Nota fiscal",
+      "Data previsão",
+      "Status",
+      "Data último contato",
+      "Top 40",
+      "Val. Pago",
+      "Val. Aberto",
+      "Val. Atualizado",
+    ];
+    const data: (string | number)[][] = [header];
+    for (const g of dadosOrdenados) {
+      for (const r of g.rows) {
+        const chave = r.chave_cliente;
+        const info = chave ? (statusPorChave[chave] ?? statusDashboard[chave]) : null;
+        const statusLabel = info ? (STATUS_OPCOES.find((o) => o.value === info.status)?.label ?? info.status) : "Em cobrança";
+        const dataNeg = info?.status === "negociado_pagamento" && info?.data_negociado ? String(info.data_negociado).slice(0, 10) : "";
+        const statusTexto = dataNeg ? `${statusLabel} (${dataNeg})` : statusLabel;
+        const dataPrevisao = r.det_ddtprevisao ? new Date(r.det_ddtprevisao).toLocaleDateString("pt-BR") : "";
+        const keyContato = chaveContato(r.codigo_nome_fantasia, r.cnpj_cpf);
+        const dataUltimoContato = ultimoContatoPorChave[keyContato]
+          ? new Date(ultimoContatoPorChave[keyContato]).toLocaleDateString("pt-BR", { dateStyle: "short" })
+          : "";
+        const valAtualizado = valorAtualizado(r.ValAberto_validado, r.qtde_dias);
+        data.push([
+          r.nome_fantasia ?? "",
+          r.razao_social ?? "",
+          r.grupo_empresas ?? "",
+          r.codigo_nome_fantasia ?? "",
+          r.cnpj_cpf ?? "",
+          r.det_cnumdocfiscal ?? "",
+          dataPrevisao,
+          statusTexto,
+          dataUltimoContato,
+          r.tag_top_40 ?? "",
+          r.ValPago_validado ?? 0,
+          r.ValAberto_validado ?? 0,
+          valAtualizado ?? 0,
+        ]);
+      }
+    }
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Dashboard");
+    const nomeArquivo = `dashboard-receber-${new Date().toISOString().slice(0, 10)}.xlsx`;
+    XLSX.writeFile(wb, nomeArquivo);
+  }
 
   type PopupState =
     | { tipo: "cliente"; key: string }
@@ -1182,6 +1272,13 @@ export default function DashboardPage() {
               ))}
             </select>
           </div>
+          <button
+            type="button"
+            onClick={exportarDashboardExcel}
+            className="px-4 py-2 rounded bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700"
+          >
+            Exportar para Excel
+          </button>
         </div>
       )}
 
@@ -1213,6 +1310,7 @@ export default function DashboardPage() {
                     <th className="text-left p-2">Grupo</th>
                     <th className="text-left p-2">Top 40</th>
                     <th className="text-left p-2">Status</th>
+                    <th className="text-left p-2">Data último contato</th>
                     <th
                       className="text-right p-2 cursor-pointer hover:bg-slate-200 select-none"
                       onClick={() => handleSort("valPago")}
@@ -1303,6 +1401,13 @@ export default function DashboardPage() {
                                 {dataNeg && <span className="text-slate-500 text-xs ml-1">({dataNeg})</span>}
                               </span>
                             );
+                          })()}
+                        </td>
+                        <td className="p-2" onClick={handleClienteClick}>
+                          {(() => {
+                            const key = chaveContato(g.codigo, g.rows[0]?.cnpj_cpf ?? null);
+                            const iso = ultimoContatoPorChave[key];
+                            return iso ? new Date(iso).toLocaleDateString("pt-BR", { dateStyle: "short" }) : "—";
                           })()}
                         </td>
                         <td

@@ -18,7 +18,6 @@ const pathMinhaEmpresa = (path: string) => path === "/configuracoes/minha-empres
 const pathMeuUsuario = (path: string) => path === "/configuracoes/meu-usuario";
 const pathUsuarios = (path: string) => path === "/configuracoes/usuarios";
 const pathPerfis = (path: string) => path === "/configuracoes/perfis";
-const pathHistoricoStatus = (path: string) => path === "/historico-status";
 const pathEmail = (path: string) => path === "/configuracoes/email";
 
 type SidebarProps = { open: boolean; onToggle: () => void };
@@ -74,12 +73,10 @@ export default function Sidebar({ open, onToggle }: SidebarProps) {
     }
     if (
       pathInEmpresasInternas(pathname ?? "") ||
-      pathname === "/acessorias" ||
       pathMinhaEmpresa(pathname ?? "") ||
       pathMeuUsuario(pathname ?? "") ||
       pathUsuarios(pathname ?? "") ||
       pathPerfis(pathname ?? "") ||
-      pathHistoricoStatus(pathname ?? "") ||
       pathEmail(pathname ?? "") ||
       pathInApi(pathname ?? "")
     ) {
@@ -169,6 +166,18 @@ export default function Sidebar({ open, onToggle }: SidebarProps) {
                 </Link>
               </li>
             </>
+          )}
+          {hasPermissao("menu_acessorias") && (
+            <li>
+              <Link
+                href="/acessorias"
+                className={`block px-3 py-2 rounded ${
+                  pathname === "/acessorias" ? "bg-slate-600" : "hover:bg-slate-700"
+                }`}
+              >
+                Importar cadastro Acessorias
+              </Link>
+            </li>
           )}
         </ul>
 
@@ -278,18 +287,6 @@ export default function Sidebar({ open, onToggle }: SidebarProps) {
                 </Link>
               </div>
 
-              {hasPermissao("menu_historico_cobrancas") && (
-                <div>
-                  <Link
-                    href="/historico-status"
-                    className={`block px-3 py-2 rounded text-sm ${
-                      isActive("/historico-status") ? "bg-slate-600" : "hover:bg-slate-700"
-                    }`}
-                  >
-                    Histórico de status
-                  </Link>
-                </div>
-              )}
               {hasPermissao("menu_cadastro_usuarios") && (
                 <>
                   <div>
@@ -328,18 +325,6 @@ export default function Sidebar({ open, onToggle }: SidebarProps) {
                 </div>
               )}
 
-              {hasPermissao("menu_acessorias") && (
-                <div>
-                  <Link
-                    href="/acessorias"
-                    className={`block px-3 py-2 rounded text-sm ${
-                      isActive("/acessorias") ? "bg-slate-600" : "hover:bg-slate-700"
-                    }`}
-                  >
-                    Acessórias
-                  </Link>
-                </div>
-              )}
 
               {(hasPermissao("menu_agendamentos") || hasPermissao("menu_logs")) && (
                 <div>
