@@ -195,7 +195,7 @@ export default function PerfisPage() {
           const catUnicas = Array.from(new Set(Array.from(visibilidadeCategorias).map((d) => d.trim()).filter(Boolean)));
           await supabase.from("perfis_tipo_categorias").insert(catUnicas.map((categoria_descricao) => ({ perfis_tipo_id: id, categoria_descricao })));
         }
-      } else if (modalAberto && modalAberto !== "novo") {
+      } else if (modalAberto) {
         const id = modalAberto.id;
         await supabase.from("perfis_tipo").update({ nome: nomeTrim, updated_at: new Date().toISOString() }).eq("id", id);
         await supabase.from("perfis_tipo_permissoes").delete().eq("perfis_tipo_id", id);
