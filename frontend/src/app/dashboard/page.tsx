@@ -234,7 +234,7 @@ function buildRelatorioHtml(
       porCliente.set(key, entry);
     }
 
-    const clientes = [...porCliente.keys()].sort();
+    const clientes = Array.from(porCliente.keys()).sort();
     const totaisCliente: { label: string; valPago: number; valAberto: number; valAtualizado: number }[] = [];
     let totalGeralPago = 0;
     let totalGeralAberto = 0;
