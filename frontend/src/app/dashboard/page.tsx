@@ -650,7 +650,7 @@ export default function DashboardPage() {
         const set = new Set<string>();
         for (const c of clientes || []) {
           if (c.email) {
-            c.email.split(/[,;]/).forEach((e) => {
+            c.email.split(/[,;]/).forEach((e: string) => {
               const t = e.trim();
               if (t) set.add(t);
             });
