@@ -637,7 +637,7 @@ export default function DashboardPage() {
             .maybeSingle();
           const list: string[] = [];
           if (cliente?.email) {
-            cliente.email.split(/[,;]/).forEach((e) => {
+            cliente.email.split(/[,;]/).forEach((e: string) => {
               const t = e.trim();
               if (t && !list.includes(t)) list.push(t);
             });
