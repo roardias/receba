@@ -84,7 +84,10 @@ export default function Sidebar({ open, onToggle }: SidebarProps) {
   return (
     <aside className="fixed left-0 top-0 bottom-0 z-30 w-56 bg-slate-800 text-white p-4 flex flex-col transition-[width] duration-200">
       <div className="flex items-center justify-between gap-2 mb-6 shrink-0">
-        <h1 className="text-xl font-bold">Receba</h1>
+        <div className="flex items-center gap-2 min-w-0">
+          <img src="/logo.png" alt="Recebx" className="h-8 w-auto object-contain shrink-0" />
+          <h1 className="text-xl font-bold truncate">Recebx</h1>
+        </div>
         <button
           type="button"
           onClick={onToggle}

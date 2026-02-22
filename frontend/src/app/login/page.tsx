@@ -29,7 +29,10 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4">
       <div className="w-full max-w-sm bg-white rounded-xl shadow-lg p-8 border border-slate-200">
-        <h1 className="text-2xl font-bold text-slate-800 text-center mb-2">Receba</h1>
+        <div className="flex justify-center mb-3">
+          <img src="/logo.png" alt="Recebx" className="h-14 w-auto object-contain" />
+        </div>
+        <h1 className="text-2xl font-bold text-slate-800 text-center mb-2">Recebx</h1>
         <p className="text-slate-600 text-center text-sm mb-6">Controle de Cobranças</p>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>

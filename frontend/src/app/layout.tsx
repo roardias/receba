@@ -7,7 +7,7 @@ import AuthGuard from "@/components/AuthGuard";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Receba - Controle de Cobranças",
+  title: "Recebx - Controle de Cobranças",
 };
 
 export default function RootLayout({
