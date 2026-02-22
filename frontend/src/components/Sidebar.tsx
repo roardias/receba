@@ -140,7 +140,7 @@ export default function Sidebar({ open, onToggle }: SidebarProps) {
                 pathname === "/dashboard" ? "bg-slate-600" : "hover:bg-slate-700"
               }`}
             >
-              Dashboard
+              Relação inadimplentes
             </Link>
           </li>
               {hasPermissao("menu_historico_cobrancas") && (
