@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/lib/supabase";
 
 const pathInEmpresasInternas = (path: string) =>
   path === "/configuracoes/grupos" || path === "/configuracoes/empresas";
@@ -29,6 +30,38 @@ export default function Sidebar({ open, onToggle }: SidebarProps) {
   const [concimedAberto, setConcimedAberto] = useState(false);
   const [empresasInternasAberto, setEmpresasInternasAberto] = useState(false);
   const [apiAberto, setApiAberto] = useState(false);
+  /** null = carregando; true/false = usuário tem acesso à empresa Concimed (visibilidade no dashboard) */
+  const [podeVerConcimed, setPodeVerConcimed] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (!profile?.id) {
+      setPodeVerConcimed(null);
+      return;
+    }
+    (async () => {
+      const [resPG, resPE, resEmp] = await Promise.all([
+        supabase.from("perfis_grupos").select("grupo_id").eq("perfil_id", profile.id),
+        supabase.from("perfis_empresas").select("empresa_id").eq("perfil_id", profile.id),
+        supabase.from("empresas").select("id, nome_curto, grupo_id").order("nome_curto"),
+      ]);
+      const pg = (resPG.data || []) as { grupo_id: string }[];
+      const pe = (resPE.data || []) as { empresa_id: string }[];
+      const empresas = (resEmp.data || []) as { id: string; nome_curto: string; grupo_id: string | null }[];
+      const concimedNorm = "concimed";
+      if (pg.length === 0 && pe.length === 0) {
+        setPodeVerConcimed(empresas.some((e) => (e.nome_curto || "").trim().toLowerCase() === concimedNorm));
+        return;
+      }
+      const allowedEmpresaIds = new Set<string>(pe.map((r) => r.empresa_id));
+      for (const g of pg) {
+        empresas.filter((e) => e.grupo_id === g.grupo_id).forEach((e) => allowedEmpresaIds.add(e.id));
+      }
+      const temConcimed = empresas.some(
+        (e) => allowedEmpresaIds.has(e.id) && (e.nome_curto || "").trim().toLowerCase() === concimedNorm
+      );
+      setPodeVerConcimed(temConcimed);
+    })();
+  }, [profile?.id]);
 
   useEffect(() => {
     if (pathConcimed(pathname ?? "")) {
@@ -111,40 +144,44 @@ export default function Sidebar({ open, onToggle }: SidebarProps) {
           </li>
         </ul>
 
-        <div className="mt-6">
-          <button
-            type="button"
-            onClick={() => setConcimedAberto((v) => !v)}
-            className="flex items-center justify-between w-full px-3 py-2 rounded hover:bg-slate-700 text-left text-slate-300"
-          >
-            <span className="text-slate-400 text-xs uppercase">Concimed</span>
-            <span className="text-slate-500">{concimedAberto ? "▼" : "▶"}</span>
-          </button>
-          {concimedAberto && (
-            <ul className="pl-2 mt-1 space-y-0.5">
-              <li>
-                <Link
-                  href="/concimed/pagamentos-medicos"
-                  className={`block px-3 py-2 rounded text-sm ${
-                    isActive("/concimed/pagamentos-medicos") ? "bg-slate-600" : "hover:bg-slate-700"
-                  }`}
-                >
-                  Pagamentos para medicos
-                </Link>
-              </li>
-              <li>
-                <Link
-                  href="/dividendos-2025/controle"
-                  className={`block px-3 py-2 rounded text-sm ${
-                    isActive("/dividendos-2025/controle") ? "bg-slate-600" : "hover:bg-slate-700"
-                  }`}
-                >
-                  Controle Dividendos ata 2025
-                </Link>
-              </li>
-            </ul>
-          )}
+        {podeVerConcimed === true && (
+          <div className="mt-6">
+            <button
+              type="button"
+              onClick={() => setConcimedAberto((v) => !v)}
+              className="flex items-center justify-between w-full px-3 py-2 rounded hover:bg-slate-700 text-left text-slate-300"
+            >
+              <span className="text-slate-400 text-xs uppercase">Concimed</span>
+              <span className="text-slate-500">{concimedAberto ? "▼" : "▶"}</span>
+            </button>
+            {concimedAberto && (
+              <ul className="pl-2 mt-1 space-y-0.5">
+                <li>
+                  <Link
+                    href="/concimed/pagamentos-medicos"
+                    className={`block px-3 py-2 rounded text-sm ${
+                      isActive("/concimed/pagamentos-medicos") ? "bg-slate-600" : "hover:bg-slate-700"
+                    }`}
+                  >
+                    Pagamentos para medicos
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    href="/dividendos-2025/controle"
+                    className={`block px-3 py-2 rounded text-sm ${
+                      isActive("/dividendos-2025/controle") ? "bg-slate-600" : "hover:bg-slate-700"
+                    }`}
+                  >
+                    Controle Dividendos ata 2025
+                  </Link>
+                </li>
+              </ul>
+            )}
+          </div>
+        )}
 
+        <div className="mt-6">
           <button
             type="button"
             onClick={() => setConfiguracoesAberto((v) => !v)}

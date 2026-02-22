@@ -2,6 +2,7 @@ import { createHash } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const fernet = require("fernet");
+import { getEncryptionKey } from "@/lib/fernet-server";
 
 /** Gera chave Fernet válida (32 bytes em base64url) a partir de qualquer string. */
 function deriveFernetKey(password: string): string {
@@ -20,8 +21,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "valor inválido" }, { status: 400 });
     }
 
-    const key = (process.env.ENCRYPTION_KEY ?? "").trim();
-    if (!key) {
+    let key: string;
+    try {
+      key = getEncryptionKey();
+    } catch {
       return NextResponse.json({ error: "ENCRYPTION_KEY não configurada" }, { status: 500 });
     }
 

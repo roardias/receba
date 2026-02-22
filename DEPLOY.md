@@ -115,8 +115,8 @@ Depois disso, o sistema fica acessível pela URL da Vercel, os dados no Supabase
 ### Erro "Não foi possível descriptografar o Client Secret"
 
 1. No **Vercel** → seu projeto → **Settings** → **Environment Variables**.
-2. Adicione (ou edite) **ENCRYPTION_KEY** com **exatamente** o mesmo valor que está no seu arquivo `.env` local (a linha `ENCRYPTION_KEY=...`).
+2. Adicione (ou edite) **ENCRYPTION_KEY** com **exatamente** o mesmo valor do `.env` local. Se a chave contém `=`, cole o valor inteiro (sem aspas no campo Valor, a menos que queira que as aspas façam parte da chave).
 3. Faça um **Redeploy** (Deployments → ⋯ no último deploy → Redeploy) para as variáveis atualizadas valerem.
-4. Se o Client Secret foi salvo no ambiente local com uma chave, use essa mesma chave no Vercel. Se trocar a chave, será preciso editar a configuração de e-mail e salvar o Client Secret de novo (criptografado com a nova chave).
+4. **Se mesmo assim falhar:** o secret foi criptografado no ambiente local. Acesse o **site publicado na Vercel**, vá em **Configurações → E-mail**, edite a configuração, **cole o Client Secret de novo e salve**. Assim o valor será criptografado com a chave da Vercel e o envio passará a funcionar.
 
 Se quiser, posso te ajudar a montar o `requirements.txt` do scheduler ou a lista exata de variáveis para cada serviço.
