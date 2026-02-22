@@ -31,6 +31,8 @@ export async function POST(request: NextRequest) {
     const logoUrl = body.logo_url as string | undefined;
     const cobrancaClientes = body.cobranca_clientes as { cod_cliente?: string; cnpj_cpf?: string; cliente_nome?: string; grupo_nome?: string }[] | undefined;
     const empresasInternasNomes = (body.empresas_internas_nomes as string)?.trim() || null;
+    const grupoIdCobranca = (body.grupo_id as string)?.trim() || null;
+    const empresaIdCobranca = (body.empresa_id as string)?.trim() || null;
 
     if (!configEmailId?.trim() || !Array.isArray(toEmails) || toEmails.length === 0 || !subject?.trim()) {
       return NextResponse.json(
@@ -239,6 +241,8 @@ export async function POST(request: NextRequest) {
         cliente_nome: cliente.cliente_nome,
         grupo_nome: cliente.grupo_nome,
         empresas_internas_nomes: empresasInternasNomes,
+        grupo_id: grupoIdCobranca,
+        empresa_id: empresaIdCobranca,
         emails_destinatarios: addresses.join(", "),
         email_remetente: c.sender_mailbox,
       }));

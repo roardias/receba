@@ -6,13 +6,28 @@ import { useAuth } from "@/contexts/AuthContext";
 import { PERMISSOES_KEYS, DEFAULT_PERMISSOES_USUARIO } from "@/contexts/AuthContext";
 
 const PERMISSOES_LABELS: Record<string, string> = {
+  menu_historico_cobrancas: "Ver histórico de cobranças",
+  historico_cobrancas_editar: "Editar observação no histórico",
+  dashboard_enviar_email: "Enviar e-mail (no dashboard, ao clicar cliente/grupo)",
+  dashboard_registrar_ligacao: "Registrar ligação (no dashboard)",
+  dashboard_registrar_whatsapp: "Registrar WhatsApp (no dashboard)",
   menu_cadastro_usuarios: "Cadastro de usuários",
-  menu_email: "Envio de e-mail",
+  menu_email: "Ver página Envio de e-mail",
   enviar_email_teste: "Enviar e-mail de teste",
+  email_configurar: "Configurar e-mail (configurações, vincular empresas)",
   menu_acessorias: "Acessórias",
   menu_agendamentos: "Agendamentos API",
   menu_logs: "Logs API",
+  config_grupos_empresas_editar: "Cadastrar/editar grupos e empresas",
+  config_minha_empresa_imagem_cor: "Alterar imagem e cor (minha empresa)",
 };
+
+const PERMISSOES_GRUPOS: { titulo: string; keys: string[] }[] = [
+  { titulo: "Dashboard e histórico", keys: ["menu_historico_cobrancas", "historico_cobrancas_editar", "dashboard_enviar_email", "dashboard_registrar_ligacao", "dashboard_registrar_whatsapp"] },
+  { titulo: "E-mail", keys: ["menu_email", "enviar_email_teste", "email_configurar"] },
+  { titulo: "Configurações", keys: ["config_grupos_empresas_editar", "config_minha_empresa_imagem_cor", "menu_cadastro_usuarios"] },
+  { titulo: "Outros menus", keys: ["menu_acessorias", "menu_agendamentos", "menu_logs"] },
+];
 
 type UsuarioLista = {
   id: string;
@@ -21,11 +36,15 @@ type UsuarioLista = {
   role: string;
   ativo: boolean;
   nome: string | null;
+  perfis_tipo_id: string | null;
+  perfis_tipo_nome: string | null;
 };
 
+type PerfilTipoItem = { id: string; nome: string };
+
 export default function UsuariosPage() {
-  const { profile } = useAuth();
-  const podeAcessar = profile?.role === "adm" || profile?.role === "gerencia";
+  const { hasPermissao } = useAuth();
+  const podeAcessar = hasPermissao("menu_cadastro_usuarios");
 
   const [lista, setLista] = useState<UsuarioLista[]>([]);
   const [loading, setLoading] = useState(true);
@@ -52,6 +71,10 @@ export default function UsuariosPage() {
   const [permissoesLoading, setPermissoesLoading] = useState(false);
   const [permissoesSet, setPermissoesSet] = useState<Set<string>>(new Set());
   const [permissoesSalvando, setPermissoesSalvando] = useState(false);
+  const [perfisTipoLista, setPerfisTipoLista] = useState<PerfilTipoItem[]>([]);
+  const [perfisTipoIdNovo, setPerfisTipoIdNovo] = useState<string>("");
+  const [aplicandoPerfilId, setAplicandoPerfilId] = useState<string | null>(null);
+  const [alterandoPerfilId, setAlterandoPerfilId] = useState<string | null>(null);
 
   async function carregar() {
     setErro(null);
@@ -84,6 +107,14 @@ export default function UsuariosPage() {
     else setLoading(false);
   }, [podeAcessar]);
 
+  useEffect(() => {
+    if (!podeAcessar) return;
+    (async () => {
+      const { data } = await supabase.from("perfis_tipo").select("id, nome").order("nome");
+      setPerfisTipoLista((data ?? []) as PerfilTipoItem[]);
+    })();
+  }, [podeAcessar]);
+
   async function handleCriar(e: React.FormEvent) {
     e.preventDefault();
     if (!email.trim() || !password.trim()) {
@@ -106,7 +137,7 @@ export default function UsuariosPage() {
     const res = await fetch("/api/admin/usuarios", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ email: email.trim(), password, role }),
+      body: JSON.stringify({ email: email.trim(), password, role, perfis_tipo_id: perfisTipoIdNovo || undefined }),
     });
     const j = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -118,6 +149,7 @@ export default function UsuariosPage() {
     setEmail("");
     setPassword("");
     setRole("usuario");
+    setPerfisTipoIdNovo("");
     setErroHint(null);
     await carregar();
     setCriando(false);
@@ -186,6 +218,64 @@ export default function UsuariosPage() {
       return;
     }
     await carregar();
+  }
+
+  async function handleAlterarPerfil(uid: string, perfisTipoId: string) {
+    setErro(null);
+    setAlterandoPerfilId(uid);
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    if (!token) {
+      setErro("Sessão expirada.");
+      setAlterandoPerfilId(null);
+      return;
+    }
+    const res = await fetch(`/api/admin/usuarios/${uid}/perfil`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ perfis_tipo_id: perfisTipoId || null }),
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setErro(j.error || res.statusText);
+    } else {
+      await carregar();
+    }
+    setAlterandoPerfilId(null);
+  }
+
+  async function handleAplicarPerfil(uid: string, perfisTipoId: string) {
+    setErro(null);
+    setAplicandoPerfilId(uid);
+    try {
+      const [perm, gr, em, cat] = await Promise.all([
+        supabase.from("perfis_tipo_permissoes").select("permissao").eq("perfis_tipo_id", perfisTipoId),
+        supabase.from("perfis_tipo_grupos").select("grupo_id").eq("perfis_tipo_id", perfisTipoId),
+        supabase.from("perfis_tipo_empresas").select("empresa_id").eq("perfis_tipo_id", perfisTipoId),
+        supabase.from("perfis_tipo_categorias").select("categoria_descricao").eq("perfis_tipo_id", perfisTipoId),
+      ]);
+      await supabase.from("perfis_permissoes").delete().eq("perfil_id", uid);
+      await supabase.from("perfis_grupos").delete().eq("perfil_id", uid);
+      await supabase.from("perfis_empresas").delete().eq("perfil_id", uid);
+      await supabase.from("perfis_categorias").delete().eq("perfil_id", uid);
+      if ((perm.data ?? []).length > 0) {
+        await supabase.from("perfis_permissoes").insert(perm.data!.map((r: { permissao: string }) => ({ perfil_id: uid, permissao: r.permissao })));
+      }
+      if ((gr.data ?? []).length > 0) {
+        await supabase.from("perfis_grupos").insert(gr.data!.map((r: { grupo_id: string }) => ({ perfil_id: uid, grupo_id: r.grupo_id })));
+      }
+      if ((em.data ?? []).length > 0) {
+        await supabase.from("perfis_empresas").insert(em.data!.map((r: { empresa_id: string }) => ({ perfil_id: uid, empresa_id: r.empresa_id })));
+      }
+      if ((cat.data ?? []).length > 0) {
+        await supabase.from("perfis_categorias").insert(cat.data!.map((r: { categoria_descricao: string }) => ({ perfil_id: uid, categoria_descricao: r.categoria_descricao })));
+      }
+      await carregar();
+    } catch (e) {
+      setErro("Erro ao aplicar perfil. Tente novamente.");
+      console.error(e);
+    }
+    setAplicandoPerfilId(null);
   }
 
   async function abrirVisibilidade(uid: string) {
@@ -356,7 +446,7 @@ export default function UsuariosPage() {
     return (
       <div>
         <h1 className="text-2xl font-bold text-slate-800">Cadastro de usuários</h1>
-        <p className="text-slate-600 mt-1">Acesso restrito a Admin e Gerência.</p>
+        <p className="text-slate-600 mt-1">Você não tem permissão para acessar esta página.</p>
       </div>
     );
   }
@@ -393,7 +483,7 @@ export default function UsuariosPage() {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Perfil</label>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Nível (role)</label>
             <select
               value={role}
               onChange={(e) => setRole(e.target.value as "usuario" | "gerencia" | "adm")}
@@ -403,6 +493,20 @@ export default function UsuariosPage() {
               <option value="gerencia">Gerência</option>
               <option value="adm">Admin</option>
             </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Perfil de acesso</label>
+            <select
+              value={perfisTipoIdNovo}
+              onChange={(e) => setPerfisTipoIdNovo(e.target.value)}
+              className="px-3 py-2 border rounded min-w-[140px]"
+            >
+              <option value="">Nenhum (configurar depois)</option>
+              {perfisTipoLista.map((pt) => (
+                <option key={pt.id} value={pt.id}>{pt.nome}</option>
+              ))}
+            </select>
+            <p className="text-xs text-slate-500 mt-0.5">Permissões e visualização do perfil serão aplicadas ao usuário.</p>
           </div>
           <button
             type="submit"
@@ -437,7 +541,8 @@ export default function UsuariosPage() {
             <thead className="bg-slate-100">
               <tr>
                 <th className="text-left p-2">E-mail</th>
-                <th className="text-left p-2">Perfil</th>
+                <th className="text-left p-2">Nível</th>
+                <th className="text-left p-2">Perfil de acesso</th>
                 <th className="text-left p-2">Status</th>
                 <th className="text-left p-2">Ações</th>
               </tr>
@@ -447,6 +552,33 @@ export default function UsuariosPage() {
                 <tr key={u.id} className="border-t">
                   <td className="p-2">{u.email ?? "—"}</td>
                   <td className="p-2 capitalize">{u.role}</td>
+                  <td className="p-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <select
+                        value={u.perfis_tipo_id ?? ""}
+                        onChange={(e) => handleAlterarPerfil(u.id, e.target.value)}
+                        disabled={alterandoPerfilId === u.id}
+                        className="text-sm border rounded px-2 py-1 min-w-[120px] disabled:opacity-50"
+                        title="Alterar perfil de acesso"
+                      >
+                        <option value="">Nenhum</option>
+                        {perfisTipoLista.map((pt) => (
+                          <option key={pt.id} value={pt.id}>{pt.nome}</option>
+                        ))}
+                      </select>
+                      {u.perfis_tipo_id && (
+                        <button
+                          type="button"
+                          onClick={() => handleAplicarPerfil(u.id, u.perfis_tipo_id!)}
+                          disabled={aplicandoPerfilId === u.id}
+                          className="text-xs text-blue-600 hover:underline disabled:opacity-50"
+                          title="Copiar permissões e visualização do perfil para este usuário"
+                        >
+                          {aplicandoPerfilId === u.id ? "Aplicando..." : "Aplicar perfil"}
+                        </button>
+                      )}
+                    </div>
+                  </td>
                   <td className="p-2">
                     <span className={u.ativo ? "text-green-700" : "text-red-700"}>
                       {u.ativo ? "Ativo" : "Inativo"}
@@ -555,17 +687,24 @@ export default function UsuariosPage() {
               {permissoesLoading ? (
                 <p className="text-slate-600">Carregando...</p>
               ) : (
-                <div className="space-y-2">
-                  {PERMISSOES_KEYS.map((key) => (
-                    <label key={key} className="flex items-center gap-2 cursor-pointer text-sm">
-                      <input
-                        type="checkbox"
-                        checked={permissoesSet.has(key)}
-                        onChange={() => togglePermissao(key)}
-                        className="rounded"
-                      />
-                      {PERMISSOES_LABELS[key] ?? key}
-                    </label>
+                <div className="space-y-4">
+                  {PERMISSOES_GRUPOS.map((grupo) => (
+                    <div key={grupo.titulo}>
+                      <p className="font-medium text-slate-800 text-sm mb-2">{grupo.titulo}</p>
+                      <div className="space-y-1.5 pl-1">
+                        {grupo.keys.map((key) => (
+                          <label key={key} className="flex items-center gap-2 cursor-pointer text-sm">
+                            <input
+                              type="checkbox"
+                              checked={permissoesSet.has(key)}
+                              onChange={() => togglePermissao(key)}
+                              className="rounded"
+                            />
+                            {PERMISSOES_LABELS[key] ?? key}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
                   ))}
                 </div>
               )}

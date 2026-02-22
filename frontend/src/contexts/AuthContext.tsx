@@ -13,18 +13,31 @@ import type { User, Session } from "@supabase/supabase-js";
 
 export type Role = "adm" | "gerencia" | "usuario";
 
-/** Chaves de permissão: menu_* = ver item no menu; enviar_email_teste = usar envio de teste na página de e-mail */
+/** Chaves de permissão: menu_* = ver no menu; dashboard_* = ações no popup; config_* = configurações; etc. */
 export const PERMISSOES_KEYS = [
+  "menu_historico_cobrancas",
+  "historico_cobrancas_editar",
+  "dashboard_enviar_email",
+  "dashboard_registrar_ligacao",
+  "dashboard_registrar_whatsapp",
   "menu_cadastro_usuarios",
   "menu_email",
   "enviar_email_teste",
+  "email_configurar",
   "menu_acessorias",
   "menu_agendamentos",
   "menu_logs",
+  "config_grupos_empresas_editar",
+  "config_minha_empresa_imagem_cor",
 ] as const;
 
 /** Padrão para role usuario quando não há nenhuma linha em perfis_permissoes */
 export const DEFAULT_PERMISSOES_USUARIO: string[] = [
+  "menu_historico_cobrancas",
+  "historico_cobrancas_editar",
+  "dashboard_enviar_email",
+  "dashboard_registrar_ligacao",
+  "dashboard_registrar_whatsapp",
   "menu_email",
   "enviar_email_teste",
   "menu_acessorias",
@@ -127,7 +140,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     const p = await ensurePerfil(session.user.id);
-    setProfile(p);
+    setProfile((prev) => {
+      if (prev?.primeiro_login === false && p?.primeiro_login === true) return { ...p, primeiro_login: false };
+      return p;
+    });
   }, [session?.user?.id]);
 
   useEffect(() => {
@@ -142,7 +158,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             await supabase.auth.signOut();
             return;
           }
-          setProfile(p);
+          setProfile((prev) => {
+            if (prev?.primeiro_login === false && p.primeiro_login === true) return { ...p, primeiro_login: false };
+            return p;
+          });
         });
       } else {
         setProfile(null);
@@ -161,7 +180,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             await supabase.auth.signOut();
             return;
           }
-          setProfile(p);
+          setProfile((prev) => {
+            if (prev?.primeiro_login === false && p.primeiro_login === true) return { ...p, primeiro_login: false };
+            return p;
+          });
         });
       } else {
         setProfile(null);

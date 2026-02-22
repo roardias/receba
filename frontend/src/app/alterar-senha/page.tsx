@@ -31,14 +31,16 @@ export default function AlterarSenhaPage() {
     }
     setLoading(true);
     try {
-      const { error } = await supabase.auth.updateUser({ password: senha });
-      if (error) {
-        setErro(error.message);
-        return;
-      }
+      // Atualizar primeiro o perfil (primeiro_login = false) para evitar que o onAuthStateChange
+      // disparado pela troca de senha sobrescreva o estado com perfil antigo e force nova tela de alteração.
       const { error: errPerfil } = await setPrimeiroLoginFalse();
       if (errPerfil) {
         setErro(errPerfil.message || "Erro ao atualizar perfil. Tente fazer logout e login novamente.");
+        return;
+      }
+      const { error } = await supabase.auth.updateUser({ password: senha });
+      if (error) {
+        setErro(error.message);
         return;
       }
       router.push("/");

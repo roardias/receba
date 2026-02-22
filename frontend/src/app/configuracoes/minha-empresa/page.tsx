@@ -13,8 +13,8 @@ type ConfigEmpresa = {
 };
 
 export default function MinhaEmpresaPage() {
-  const { profile } = useAuth();
-  const podeEditar = profile?.role === "adm" || profile?.role === "gerencia";
+  const { hasPermissao } = useAuth();
+  const podeEditar = hasPermissao("config_minha_empresa_imagem_cor");
 
   const [config, setConfig] = useState<ConfigEmpresa | null>(null);
   const [loading, setLoading] = useState(true);
@@ -134,7 +134,7 @@ export default function MinhaEmpresaPage() {
       </p>
       {!podeEditar && (
         <p className="mt-2 text-amber-700 text-sm">
-          Somente visualização. Alterações permitidas para Admin e Gerência.
+          Somente visualização. A permissão para alterar nome, imagem e cor é definida no Cadastro de usuários.
         </p>
       )}
 

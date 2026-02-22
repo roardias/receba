@@ -225,11 +225,25 @@ export default function EmailConfigPage() {
 
   if (loading) return <p className="text-slate-600">Carregando...</p>;
 
+  const podeTeste = hasPermissao("enviar_email_teste");
+  const podeConfigurar = hasPermissao("email_configurar");
+
+  if (!podeTeste && !podeConfigurar) {
+    return (
+      <div>
+        <h1 className="text-2xl font-bold text-slate-800">Envio de e-mail</h1>
+        <p className="text-slate-600 mt-1">Você não tem permissão para configurar e-mail nem para enviar teste.</p>
+      </div>
+    );
+  }
+
   return (
     <div>
       <h1 className="text-2xl font-bold text-slate-800">Envio de e-mail (Microsoft)</h1>
       <p className="text-slate-600 mt-1">
-        Configure contas Microsoft para disparo automático de e-mails. Selecione quais empresas utilizarão cada configuração.
+        {podeConfigurar
+          ? "Configure contas Microsoft para disparo automático de e-mails. Selecione quais empresas utilizarão cada configuração."
+          : "Envie um e-mail de teste para validar o sistema."}
       </p>
 
       {erro && (
@@ -237,7 +251,7 @@ export default function EmailConfigPage() {
       )}
 
       {/* Envio de teste — só exibido para quem tem permissão enviar_email_teste */}
-      {hasPermissao("enviar_email_teste") && (
+      {podeTeste && (
         <section className="mt-6 p-4 border rounded bg-slate-50 max-w-2xl">
           <h2 className="font-semibold text-slate-800 mb-3">Envio de teste</h2>
           <p className="text-slate-600 text-sm mb-4">
@@ -312,7 +326,12 @@ export default function EmailConfigPage() {
         </section>
       )}
 
-      <form onSubmit={salvar} className="mt-8 space-y-4 max-w-2xl">
+      {/* Configuração — só exibido para quem tem permissão email_configurar */}
+      {podeConfigurar && (
+      <>
+      <h2 className="mt-8 font-semibold text-slate-800">Configuração de contas Microsoft</h2>
+      <p className="text-slate-600 text-sm mt-1">Cadastre e edite configurações; vincule empresas a cada uma.</p>
+      <form onSubmit={salvar} className="mt-4 space-y-4 max-w-2xl">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Tenant ID</label>
@@ -418,7 +437,10 @@ export default function EmailConfigPage() {
           )}
         </div>
       </form>
+      </>
+      )}
 
+      {podeConfigurar && (
       <div className="mt-8">
         <h2 className="font-semibold text-slate-800 mb-3">Configurações cadastradas</h2>
         <div className="overflow-x-auto border rounded">
@@ -468,6 +490,7 @@ export default function EmailConfigPage() {
           <p className="text-slate-500 py-4">Nenhuma configuração de e-mail cadastrada.</p>
         )}
       </div>
+      )}
     </div>
   );
 }

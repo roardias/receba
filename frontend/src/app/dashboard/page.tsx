@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/contexts/AuthContext";
 
 type Grupo = { id: string; nome: string };
 type Empresa = { id: string; nome_curto: string; grupo_id: string | null };
 type DashboardRow = {
   movimento_id: string;
+  chave_cliente: string | null;
   empresa: string;
   det_cnumdocfiscal: string | null;
   det_ddtemissao: string | null;
@@ -22,6 +24,15 @@ type DashboardRow = {
   tag_top_40: string | null;
   grupo_empresas: string | null;
 };
+
+const STATUS_OPCOES = [
+  { value: "em_cobranca", label: "Em cobrança" },
+  { value: "negociado_pagamento", label: "Negociado pagamento" },
+  { value: "nao_cumpriu_promessa_pagamento", label: "Não cumpriu promessa de pagamento" },
+  { value: "bloqueado", label: "Bloqueado" },
+  { value: "protestado", label: "Protestado" },
+  { value: "em_acao_judicial", label: "Em ação judicial" },
+] as const;
 
 function formatarMoeda(val: number | null) {
   if (val == null) return "—";
@@ -340,6 +351,7 @@ function buildEmailHtml(
 }
 
 export default function DashboardPage() {
+  const { hasPermissao } = useAuth();
   const [grupos, setGrupos] = useState<Grupo[]>([]);
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [grupoId, setGrupoId] = useState<string>("");
@@ -348,9 +360,12 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [loadingDados, setLoadingDados] = useState(false);
   const [buscaCliente, setBuscaCliente] = useState("");
+  const [filtroStatus, setFiltroStatus] = useState("");
   type SortCol = "cod" | "cliente" | "valPago" | "valAberto" | "valAtualizado";
   const [sortCol, setSortCol] = useState<SortCol>("valAberto");
   const [sortAsc, setSortAsc] = useState(false);
+  const [statusPorChave, setStatusPorChave] = useState<Record<string, { status: string; data_negociado: string | null }>>({});
+  const [statusDashboard, setStatusDashboard] = useState<Record<string, { status: string; data_negociado: string | null }>>({});
 
   function handleSort(col: SortCol) {
     setSortCol(col);
@@ -387,7 +402,15 @@ export default function DashboardPage() {
       const grupoIds = pg.length ? new Set(pg.map((r) => r.grupo_id)) : null;
       const empresaIds = pe.length ? new Set(pe.map((r) => r.empresa_id)) : null;
       setGrupos(grupoIds ? gruposAll.filter((g) => grupoIds.has(g.id)) : gruposAll);
-      setEmpresas(empresaIds ? empresasAll.filter((e) => empresaIds.has(e.id)) : empresasAll);
+      const empresasFiltro =
+        grupoIds && empresaIds
+          ? empresasAll.filter((e) => e.grupo_id != null && grupoIds.has(e.grupo_id) || empresaIds.has(e.id))
+          : grupoIds
+            ? empresasAll.filter((e) => e.grupo_id != null && grupoIds.has(e.grupo_id))
+            : empresaIds
+              ? empresasAll.filter((e) => empresaIds.has(e.id))
+              : empresasAll;
+      setEmpresas(empresasFiltro);
       setLoading(false);
     })();
   }, []);
@@ -400,10 +423,6 @@ export default function DashboardPage() {
   const empresaSelecionada = empresasFiltradas.find((e) => e.id === empresaId);
   const nomesCurtosGrupo = empresasFiltradas.map((e) => e.nome_curto);
   const deveCarregar = !!grupoId;
-  const dadosVisiveis =
-    allowedCategorias.size > 0
-      ? dados.filter((r) => allowedCategorias.has((r.categoria_descricao ?? "").trim()))
-      : dados;
   const contextEmpresaIds: string[] =
     !grupoId ? [] : empresaSelecionada ? [empresaSelecionada.id] : empresasFiltradas.map((e) => e.id);
 
@@ -442,6 +461,35 @@ export default function DashboardPage() {
       cancelled = true;
     };
   }, [deveCarregar, empresaSelecionada?.nome_curto, nomesCurtosGrupo.join(",")]);
+
+  const dadosVisiveis = useMemo(
+    () =>
+      allowedCategorias.size > 0
+        ? dados.filter((r) => allowedCategorias.has((r.categoria_descricao ?? "").trim()))
+        : dados,
+    [dados, allowedCategorias]
+  );
+
+  useEffect(() => {
+    const chaves = [...new Set(dadosVisiveis.map((r) => r.chave_cliente).filter(Boolean))] as string[];
+    if (chaves.length === 0) {
+      setStatusDashboard({});
+      return;
+    }
+    supabase.rpc("expirar_negociados").then(() => {
+      supabase
+        .from("cliente_status")
+        .select("chave_cliente, status, data_negociado")
+        .in("chave_cliente", chaves)
+        .then(({ data }) => {
+          const map: Record<string, { status: string; data_negociado: string | null }> = {};
+          (data || []).forEach((r: { chave_cliente: string; status: string; data_negociado: string | null }) => {
+            map[r.chave_cliente] = { status: r.status, data_negociado: r.data_negociado ?? null };
+          });
+          setStatusDashboard(map);
+        });
+    });
+  }, [dadosVisiveis]);
 
   function handleGrupoChange(e: React.ChangeEvent<HTMLSelectElement>) {
     setGrupoId(e.target.value);
@@ -506,7 +554,17 @@ export default function DashboardPage() {
       )
     : dadosAgrupados;
 
-  const dadosOrdenados = [...dadosFiltrados].sort((a, b) => {
+  const dadosFiltradosPorStatus = useMemo(() => {
+    if (!filtroStatus) return dadosFiltrados;
+    return dadosFiltrados.filter((g) => {
+      const chave = g.rows[0]?.chave_cliente;
+      const info = chave ? (statusPorChave[chave] ?? statusDashboard[chave]) : null;
+      const s = info?.status ?? "em_cobranca";
+      return s === filtroStatus;
+    });
+  }, [dadosFiltrados, filtroStatus, statusDashboard, statusPorChave]);
+
+  const dadosOrdenados = [...dadosFiltradosPorStatus].sort((a, b) => {
     let cmp = 0;
     if (sortCol === "cod") {
       cmp = (a.codigo ?? "").localeCompare(b.codigo ?? "");
@@ -561,6 +619,15 @@ export default function DashboardPage() {
   const [whatsappCargoConversou, setWhatsappCargoConversou] = useState("");
   const [whatsappSalvando, setWhatsappSalvando] = useState(false);
   const [whatsappSucesso, setWhatsappSucesso] = useState<string | null>(null);
+
+  const [statusModalAberto, setStatusModalAberto] = useState(false);
+  const [statusEscolhido, setStatusEscolhido] = useState<string>("em_cobranca");
+  const [statusDataNegociado, setStatusDataNegociado] = useState("");
+  const [statusEscopoPendente, setStatusEscopoPendente] = useState(false);
+  const [statusAplicarGrupo, setStatusAplicarGrupo] = useState<boolean | null>(null);
+  const [statusSalvando, setStatusSalvando] = useState(false);
+  const [statusErro, setStatusErro] = useState<string | null>(null);
+  const [statusSucesso, setStatusSucesso] = useState<string | null>(null);
 
   const clienteSelecionado =
     popupAberto?.tipo === "cliente"
@@ -663,6 +730,110 @@ export default function DashboardPage() {
     }
   }
 
+  function abrirStatusModal() {
+    setStatusModalAberto(true);
+    setStatusEscopoPendente(false);
+    setStatusAplicarGrupo(null);
+    setStatusErro(null);
+    setStatusSucesso(null);
+    setStatusEscolhido("em_cobranca");
+    setStatusDataNegociado("");
+    const chaves: string[] =
+      popupAberto?.tipo === "cliente"
+        ? [...new Set((detalheRows.map((r) => r.chave_cliente).filter(Boolean) as string[]))]
+        : [...new Set((movimentosDoGrupo.map((r) => r.chave_cliente).filter(Boolean) as string[]))];
+    if (chaves.length > 0) {
+      supabase
+        .from("cliente_status")
+        .select("chave_cliente, status, data_negociado")
+        .in("chave_cliente", chaves)
+        .then(({ data }) => {
+          const map: Record<string, { status: string; data_negociado: string | null }> = {};
+          (data || []).forEach((r: { chave_cliente: string; status: string; data_negociado: string | null }) => {
+            map[r.chave_cliente] = { status: r.status, data_negociado: r.data_negociado ?? null };
+          });
+          setStatusPorChave(map);
+          const primeira = data?.[0];
+          if (primeira) {
+            setStatusEscolhido(primeira.status);
+            setStatusDataNegociado(primeira.data_negociado ? String(primeira.data_negociado).slice(0, 10) : "");
+          }
+        });
+    }
+  }
+
+  function confirmarStatusContinuar() {
+    const grupoNome =
+      popupAberto?.tipo === "cliente" ? clienteSelecionado?.grupo_empresas : null;
+    if (popupAberto?.tipo === "cliente" && grupoNome && statusAplicarGrupo === null) {
+      setStatusEscopoPendente(true);
+      return;
+    }
+    salvarStatus();
+  }
+
+  async function salvarStatus(aplicarTodoGrupo?: boolean) {
+    setStatusErro(null);
+    setStatusSalvando(true);
+    try {
+      let chaves: string[] = [];
+      if (popupAberto?.tipo === "cliente") {
+        if (aplicarTodoGrupo === true || statusAplicarGrupo === true) {
+          const grupoNome = (clienteSelecionado?.grupo_empresas ?? "").toLowerCase();
+          const doGrupo = dadosAgrupados.filter(
+            (g) => (g.grupo_empresas ?? "").toLowerCase() === grupoNome
+          );
+          chaves = [...new Set(doGrupo.flatMap((c) => c.rows.map((r) => r.chave_cliente).filter(Boolean) as string[]))];
+        } else {
+          chaves = [...new Set(detalheRows.map((r) => r.chave_cliente).filter(Boolean) as string[])];
+        }
+      } else {
+        chaves = [...new Set(movimentosDoGrupo.map((r) => r.chave_cliente).filter(Boolean) as string[])];
+      }
+      const dataNegociado =
+        statusEscolhido === "negociado_pagamento" && statusDataNegociado.trim()
+          ? statusDataNegociado.trim()
+          : null;
+      const { data: { user } } = await supabase.auth.getUser();
+      for (const chave of chaves) {
+        await supabase.from("cliente_status").upsert(
+          {
+            chave_cliente: chave,
+            status: statusEscolhido,
+            data_negociado: dataNegociado,
+            updated_at: new Date().toISOString(),
+            updated_by: user?.id ?? null,
+          },
+          { onConflict: "chave_cliente" }
+        );
+      }
+      setStatusSucesso(
+        chaves.length === 1
+          ? "Status atualizado."
+          : `Status atualizado para ${chaves.length} cliente(s).`
+      );
+      const atual = { status: statusEscolhido, data_negociado: dataNegociado };
+      setStatusPorChave((prev) => {
+        const next = { ...prev };
+        chaves.forEach((k) => { next[k] = atual; });
+        return next;
+      });
+      setStatusDashboard((prev) => {
+        const next = { ...prev };
+        chaves.forEach((k) => { next[k] = atual; });
+        return next;
+      });
+      setTimeout(() => {
+        setStatusModalAberto(false);
+        setStatusSucesso(null);
+      }, 1500);
+    } catch (e) {
+      setStatusErro(e instanceof Error ? e.message : "Erro ao salvar status.");
+    } finally {
+      setStatusSalvando(false);
+    }
+  }
+
   async function enviarEmailDashboard() {
     if (!configEmailId || emailsDestinatarios.length === 0) return;
     setEnviandoEmail(true);
@@ -717,6 +888,8 @@ export default function DashboardPage() {
       body: JSON.stringify({
         config_email_id: configEmailId,
         empresa_ids: contextEmpresaIds,
+        grupo_id: grupoId || null,
+        empresa_id: empresaSelecionada?.id || null,
         to_emails: emailsDestinatarios,
         subject: assuntoEmail,
         body_html: bodyHtml,
@@ -781,6 +954,8 @@ export default function DashboardPage() {
         cliente_nome: cliente.cliente_nome,
         grupo_nome: cliente.grupo_nome,
         empresas_internas_nomes: empresasInternasNomesStr || null,
+        grupo_id: grupoId || null,
+        empresa_id: empresaSelecionada?.id || null,
         foi_atendido: ligacaoFoiAtendido,
         nome_pessoa: ligacaoFoiAtendido ? (ligacaoNomePessoa.trim() || null) : null,
         cargo_pessoa: ligacaoFoiAtendido ? (ligacaoCargoPessoa.trim() || null) : null,
@@ -819,6 +994,8 @@ export default function DashboardPage() {
         cliente_nome: cliente.cliente_nome,
         grupo_nome: cliente.grupo_nome,
         empresas_internas_nomes: empresasInternasNomesStr || null,
+        grupo_id: grupoId || null,
+        empresa_id: empresaSelecionada?.id || null,
         mensagem_whatsapp_enviada: whatsappMensagemEnviada.trim() || null,
         observacao: whatsappObservacao.trim() || null,
         houve_negociacao: whatsappHouveNegociacao,
@@ -975,17 +1152,36 @@ export default function DashboardPage() {
       </div>
 
       {grupoId && !loadingDados && dadosVisiveis.length > 0 && (
-        <div className="mt-6">
-          <label className="block text-sm font-medium text-slate-700 mb-1">
-            Buscar cliente
-          </label>
-          <input
-            type="text"
-            value={buscaCliente}
-            onChange={(e) => setBuscaCliente(e.target.value)}
-            placeholder="Nome, código ou grupo..."
-            className="px-4 py-2 border rounded bg-white min-w-[200px]"
-          />
+        <div className="mt-6 flex flex-wrap gap-4 items-end">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              Buscar cliente
+            </label>
+            <input
+              type="text"
+              value={buscaCliente}
+              onChange={(e) => setBuscaCliente(e.target.value)}
+              placeholder="Nome, código ou grupo..."
+              className="px-4 py-2 border rounded bg-white min-w-[200px]"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              Status
+            </label>
+            <select
+              value={filtroStatus}
+              onChange={(e) => setFiltroStatus(e.target.value)}
+              className="px-4 py-2 border rounded bg-white min-w-[220px]"
+            >
+              <option value="">Todos os status</option>
+              {STATUS_OPCOES.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       )}
 
@@ -1016,6 +1212,7 @@ export default function DashboardPage() {
                     </th>
                     <th className="text-left p-2">Grupo</th>
                     <th className="text-left p-2">Top 40</th>
+                    <th className="text-left p-2">Status</th>
                     <th
                       className="text-right p-2 cursor-pointer hover:bg-slate-200 select-none"
                       onClick={() => handleSort("valPago")}
@@ -1094,6 +1291,20 @@ export default function DashboardPage() {
                             "—"
                           )}
                         </td>
+                        <td className="p-2" onClick={handleClienteClick}>
+                          {(() => {
+                            const chave = g.rows[0]?.chave_cliente;
+                            const info = chave ? (statusPorChave[chave] ?? statusDashboard[chave]) : null;
+                            const statusLabel = info ? (STATUS_OPCOES.find((o) => o.value === info.status)?.label ?? info.status) : "Em cobrança";
+                            const dataNeg = info?.status === "negociado_pagamento" && info?.data_negociado ? String(info.data_negociado).slice(0, 10) : null;
+                            return (
+                              <span className="text-slate-700">
+                                {statusLabel}
+                                {dataNeg && <span className="text-slate-500 text-xs ml-1">({dataNeg})</span>}
+                              </span>
+                            );
+                          })()}
+                        </td>
                         <td
                           className="p-2 text-right cursor-pointer"
                           onClick={handleClienteClick}
@@ -1157,78 +1368,105 @@ export default function DashboardPage() {
                         </h3>
                       ) : null}
                     </div>
-                    <div className="flex items-center gap-2 shrink-0 flex-wrap">
-                      <button
-                        type="button"
-                        onClick={abrirEmailPopup}
-                        className="inline-flex items-center gap-2 px-3 py-1.5 rounded bg-slate-700 text-white text-sm hover:bg-slate-600"
-                        title="Enviar e-mail"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                        </svg>
-                        Enviar e-mail
-                      </button>
-                      <button
-                        type="button"
-                        onClick={gerarRelatorioPdf}
-                        className="inline-flex items-center gap-2 px-3 py-1.5 rounded bg-slate-500 text-white text-sm hover:bg-slate-400"
-                        title="Gerar PDF"
-                      >
-                        PDF
-                      </button>
-                      <button
-                        type="button"
-                        onClick={gerarRelatorioExcel}
-                        className="inline-flex items-center gap-2 px-3 py-1.5 rounded bg-amber-600 text-white text-sm hover:bg-amber-500"
-                        title="Gerar Excel"
-                      >
-                        Excel
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setLigacaoFoiAtendido(null);
-                          setLigacaoNomePessoa("");
-                          setLigacaoCargoPessoa("");
-                          setLigacaoHouveNegociacao(null);
-                          setLigacaoObservacaoNaoNegociacao("");
-                          setLigacaoDataPrevista("");
-                          setLigacaoHouveDesconto(null);
-                          setLigacaoValorDesconto("");
-                          setLigacaoMotivoDesconto("");
-                          setLigacaoObservacao("");
-                          setLigacaoSucesso(null);
-                          setLigacaoPopupAberto(true);
-                        }}
-                        className="inline-flex items-center gap-2 px-3 py-1.5 rounded bg-emerald-700 text-white text-sm hover:bg-emerald-600"
-                        title="Registrar ligação"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                        </svg>
-                        Registrar ligação
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setWhatsappMensagemEnviada("");
-                          setWhatsappObservacao("");
-                          setWhatsappHouveNegociacao(null);
-                          setWhatsappDataPrevista("");
-                          setWhatsappNomeConversou("");
-                          setWhatsappCargoConversou("");
-                          setWhatsappSucesso(null);
-                          setWhatsappPopupAberto(true);
-                        }}
-                        className="inline-flex items-center gap-2 px-3 py-1.5 rounded bg-green-700 text-white text-sm hover:bg-green-600"
-                        title="Registrar WhatsApp"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                        </svg>
-                        Registrar WhatsApp
-                      </button>
+                    <div className="flex items-center gap-4 shrink-0 flex-wrap">
+                      <div className="flex flex-col gap-1">
+                        <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">Registrar contato</span>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {hasPermissao("dashboard_enviar_email") && (
+                            <button
+                              type="button"
+                              onClick={abrirEmailPopup}
+                              className="inline-flex items-center gap-2 px-3 py-1.5 rounded bg-slate-700 text-white text-sm hover:bg-slate-600"
+                              title="Enviar e-mail"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                              </svg>
+                              Enviar e-mail
+                            </button>
+                          )}
+                          {hasPermissao("dashboard_registrar_ligacao") && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setLigacaoFoiAtendido(null);
+                                setLigacaoNomePessoa("");
+                                setLigacaoCargoPessoa("");
+                                setLigacaoHouveNegociacao(null);
+                                setLigacaoObservacaoNaoNegociacao("");
+                                setLigacaoDataPrevista("");
+                                setLigacaoHouveDesconto(null);
+                                setLigacaoValorDesconto("");
+                                setLigacaoMotivoDesconto("");
+                                setLigacaoObservacao("");
+                                setLigacaoSucesso(null);
+                                setLigacaoPopupAberto(true);
+                              }}
+                              className="inline-flex items-center gap-2 px-3 py-1.5 rounded bg-emerald-700 text-white text-sm hover:bg-emerald-600"
+                              title="Registrar ligação"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                              </svg>
+                              Registrar ligação
+                            </button>
+                          )}
+                          {hasPermissao("dashboard_registrar_whatsapp") && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setWhatsappMensagemEnviada("");
+                                setWhatsappObservacao("");
+                                setWhatsappHouveNegociacao(null);
+                                setWhatsappDataPrevista("");
+                                setWhatsappNomeConversou("");
+                                setWhatsappCargoConversou("");
+                                setWhatsappSucesso(null);
+                                setWhatsappPopupAberto(true);
+                              }}
+                              className="inline-flex items-center gap-2 px-3 py-1.5 rounded bg-green-700 text-white text-sm hover:bg-green-600"
+                              title="Registrar WhatsApp"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                              </svg>
+                              Registrar WhatsApp
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={abrirStatusModal}
+                            className="inline-flex items-center gap-2 px-3 py-1.5 rounded bg-amber-600 text-white text-sm hover:bg-amber-500"
+                            title="Alterar status de cobrança"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                            </svg>
+                            Alterar status
+                          </button>
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">Gerar Relatórios</span>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={gerarRelatorioPdf}
+                            className="inline-flex items-center gap-2 px-3 py-1.5 rounded bg-slate-500 text-white text-sm hover:bg-slate-400"
+                            title="Gerar PDF"
+                          >
+                            PDF
+                          </button>
+                          <button
+                            type="button"
+                            onClick={gerarRelatorioExcel}
+                            className="inline-flex items-center gap-2 px-3 py-1.5 rounded bg-amber-600 text-white text-sm hover:bg-amber-500"
+                            title="Gerar Excel"
+                          >
+                            Excel
+                          </button>
+                        </div>
+                      </div>
                       <button
                         onClick={() => setPopupAberto(null)}
                         className="text-slate-500 hover:text-slate-700 text-2xl leading-none"
@@ -1315,6 +1553,109 @@ export default function DashboardPage() {
                         </tbody>
                       </table>
                     ) : null}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {statusModalAberto && (
+              <div
+                className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4"
+                onClick={() => !statusSalvando && !statusEscopoPendente && setStatusModalAberto(false)}
+              >
+                <div
+                  className="bg-white rounded-lg shadow-xl max-w-md w-full overflow-hidden"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="flex justify-between items-center p-4 border-b">
+                    <h3 className="text-lg font-semibold text-slate-800">Alterar status de cobrança</h3>
+                    {!statusEscopoPendente && (
+                      <button
+                        type="button"
+                        onClick={() => !statusSalvando && setStatusModalAberto(false)}
+                        className="text-slate-500 hover:text-slate-700 text-2xl leading-none"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+                  <div className="p-4 space-y-4">
+                    {statusSucesso ? (
+                      <p className="text-green-700 font-medium">{statusSucesso}</p>
+                    ) : statusEscopoPendente ? (
+                      <>
+                        <p className="text-slate-700">
+                          Deseja alterar o status para <strong>este cliente somente</strong> ou para <strong>todas as empresas do grupo {clienteSelecionado?.grupo_empresas ?? ""}</strong>?
+                        </p>
+                        <div className="flex gap-3 pt-2">
+                          <button
+                            type="button"
+                            onClick={() => salvarStatus(false)}
+                            disabled={statusSalvando}
+                            className="flex-1 px-4 py-2 rounded bg-slate-600 text-white hover:bg-slate-500 disabled:opacity-50"
+                          >
+                            {statusSalvando ? "Salvando..." : "Só este cliente"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => salvarStatus(true)}
+                            disabled={statusSalvando}
+                            className="flex-1 px-4 py-2 rounded bg-amber-600 text-white hover:bg-amber-500 disabled:opacity-50"
+                          >
+                            {statusSalvando ? "Salvando..." : `Todo o grupo ${clienteSelecionado?.grupo_empresas ?? ""}`}
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">Status</label>
+                          <select
+                            value={statusEscolhido}
+                            onChange={(e) => setStatusEscolhido(e.target.value)}
+                            className="w-full px-3 py-2 border border-slate-300 rounded"
+                          >
+                            {STATUS_OPCOES.map((o) => (
+                              <option key={o.value} value={o.value}>
+                                {o.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        {statusEscolhido === "negociado_pagamento" && (
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Data prevista para pagamento</label>
+                            <input
+                              type="date"
+                              value={statusDataNegociado}
+                              onChange={(e) => setStatusDataNegociado(e.target.value)}
+                              className="w-full px-3 py-2 border border-slate-300 rounded"
+                            />
+                          </div>
+                        )}
+                        {statusErro && (
+                          <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded">{statusErro}</p>
+                        )}
+                        <div className="flex justify-end gap-2 pt-2">
+                          <button
+                            type="button"
+                            onClick={() => !statusSalvando && setStatusModalAberto(false)}
+                            className="px-4 py-2 border rounded hover:bg-slate-100"
+                            disabled={statusSalvando}
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={confirmarStatusContinuar}
+                            disabled={statusSalvando}
+                            className="px-4 py-2 rounded bg-amber-600 text-white hover:bg-amber-500 disabled:opacity-50"
+                          >
+                            {statusSalvando ? "Salvando..." : "Continuar"}
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>

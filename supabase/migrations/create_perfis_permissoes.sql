@@ -1,5 +1,5 @@
--- Permissões por perfil: menus e ações (ex.: enviar e-mail de teste)
--- Chaves usadas: menu_cadastro_usuarios, menu_email, enviar_email_teste, menu_acessorias, menu_agendamentos, menu_logs
+-- Permissões por perfil: menus e ações parametrizáveis por usuário
+-- Chaves: menu_historico_cobrancas, historico_cobrancas_editar, dashboard_enviar_email, dashboard_registrar_ligacao, dashboard_registrar_whatsapp, menu_cadastro_usuarios, menu_email, enviar_email_teste, email_configurar, menu_acessorias, menu_agendamentos, menu_logs, config_grupos_empresas_editar, config_minha_empresa_imagem_cor
 
 CREATE TABLE IF NOT EXISTS perfis_permissoes (
   perfil_id uuid NOT NULL REFERENCES perfis(id) ON DELETE CASCADE,

@@ -7,8 +7,8 @@ import { useAuth } from "@/contexts/AuthContext";
 type Grupo = { id: string; nome: string; ordem: number };
 
 export default function GruposPage() {
-  const { profile } = useAuth();
-  const podeEditar = profile?.role === "adm" || profile?.role === "gerencia";
+  const { hasPermissao } = useAuth();
+  const podeEditar = hasPermissao("config_grupos_empresas_editar");
 
   const [grupos, setGrupos] = useState<Grupo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -62,7 +62,7 @@ export default function GruposPage() {
       <h1 className="text-2xl font-bold text-slate-800">Grupos</h1>
       <p className="text-slate-600 mt-1">Agrupe empresas (ex: Alldax 1, 2, 3 no grupo Alldax)</p>
       {!podeEditar && (
-        <p className="mt-2 text-amber-700 text-sm">Somente visualização. Alterações permitidas para Admin e Gerência.</p>
+        <p className="mt-2 text-amber-700 text-sm">Somente visualização. Permissão para cadastrar/editar é definida no Cadastro de usuários.</p>
       )}
 
       {podeEditar && (

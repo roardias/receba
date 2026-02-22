@@ -17,6 +17,8 @@ const pathDividendos = (path: string) =>
 const pathMinhaEmpresa = (path: string) => path === "/configuracoes/minha-empresa";
 const pathMeuUsuario = (path: string) => path === "/configuracoes/meu-usuario";
 const pathUsuarios = (path: string) => path === "/configuracoes/usuarios";
+const pathPerfis = (path: string) => path === "/configuracoes/perfis";
+const pathHistoricoStatus = (path: string) => path === "/historico-status";
 const pathEmail = (path: string) => path === "/configuracoes/email";
 
 type SidebarProps = { open: boolean; onToggle: () => void };
@@ -76,6 +78,8 @@ export default function Sidebar({ open, onToggle }: SidebarProps) {
       pathMinhaEmpresa(pathname ?? "") ||
       pathMeuUsuario(pathname ?? "") ||
       pathUsuarios(pathname ?? "") ||
+      pathPerfis(pathname ?? "") ||
+      pathHistoricoStatus(pathname ?? "") ||
       pathEmail(pathname ?? "") ||
       pathInApi(pathname ?? "")
     ) {
@@ -142,6 +146,30 @@ export default function Sidebar({ open, onToggle }: SidebarProps) {
               Dashboard
             </Link>
           </li>
+              {hasPermissao("menu_historico_cobrancas") && (
+            <>
+              <li>
+                <Link
+                  href="/historico-cobrancas"
+                  className={`block px-3 py-2 rounded ${
+                    pathname === "/historico-cobrancas" ? "bg-slate-600" : "hover:bg-slate-700"
+                  }`}
+                >
+                  Histórico de cobranças
+                </Link>
+              </li>
+              <li>
+                <Link
+                  href="/historico-status"
+                  className={`block px-3 py-2 rounded ${
+                    pathname === "/historico-status" ? "bg-slate-600" : "hover:bg-slate-700"
+                  }`}
+                >
+                  Histórico de status
+                </Link>
+              </li>
+            </>
+          )}
         </ul>
 
         {podeVerConcimed === true && (
@@ -250,17 +278,41 @@ export default function Sidebar({ open, onToggle }: SidebarProps) {
                 </Link>
               </div>
 
-              {hasPermissao("menu_cadastro_usuarios") && (
+              {hasPermissao("menu_historico_cobrancas") && (
                 <div>
                   <Link
-                    href="/configuracoes/usuarios"
+                    href="/historico-status"
                     className={`block px-3 py-2 rounded text-sm ${
-                      isActive("/configuracoes/usuarios") ? "bg-slate-600" : "hover:bg-slate-700"
+                      isActive("/historico-status") ? "bg-slate-600" : "hover:bg-slate-700"
                     }`}
                   >
-                    Cadastro usuário
+                    Histórico de status
                   </Link>
                 </div>
+              )}
+              {hasPermissao("menu_cadastro_usuarios") && (
+                <>
+                  <div>
+                    <Link
+                      href="/configuracoes/perfis"
+                      className={`block px-3 py-2 rounded text-sm ${
+                        isActive("/configuracoes/perfis") ? "bg-slate-600" : "hover:bg-slate-700"
+                      }`}
+                    >
+                      Perfis de acesso
+                    </Link>
+                  </div>
+                  <div>
+                    <Link
+                      href="/configuracoes/usuarios"
+                      className={`block px-3 py-2 rounded text-sm ${
+                        isActive("/configuracoes/usuarios") ? "bg-slate-600" : "hover:bg-slate-700"
+                      }`}
+                    >
+                      Cadastro usuário
+                    </Link>
+                  </div>
+                </>
               )}
 
               {hasPermissao("menu_email") && (

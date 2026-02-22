@@ -389,9 +389,12 @@ export default function PagamentosMedicosPage() {
                 </tr>
               ) : (
                 linhasOrdenadas.map((l, idx) => (
-                  <tr key={`${l.empresa ?? ""}_${l.chave_cliente ?? l.cnpj_cpf_apenas_numeros}_${idx}`} className="border-b border-slate-100 hover:bg-slate-50">
+                  <tr
+                    key={`${l.empresa ?? ""}_${l.chave_cliente ?? l.cnpj_cpf_apenas_numeros}_${idx}`}
+                    className="border-b border-slate-100 transition-colors hover:bg-sky-100 focus-within:bg-sky-100"
+                  >
                     <td className="p-2 whitespace-nowrap">{l.empresa || "—"}</td>
-                    <td className="p-2 sticky left-0 bg-white z-10 font-medium">{l.razao_social || "—"}</td>
+                    <td className="p-2 sticky left-0 bg-inherit z-10 font-medium">{l.razao_social || "—"}</td>
                     <td className="p-2">{formatarCnpjCpf(l.cnpj_cpf_apenas_numeros)}</td>
                     {colunasMesAno.map((km) => {
                       const val = l.porMes.get(km);
