@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
   const ids = users.users.map((u) => u.id);
   const { data: perfis } = await supabase.from("perfis").select("id, role, ativo, nome, perfis_tipo_id").in("id", ids);
   const map = new Map((perfis || []).map((p) => [p.id, p]));
-  const tipoIds = [...new Set((perfis || []).map((p) => p.perfis_tipo_id).filter(Boolean))] as string[];
+  const tipoIds = Array.from(new Set((perfis || []).map((p) => p.perfis_tipo_id).filter(Boolean))) as string[];
   const tipoMap = new Map<string, string>();
   if (tipoIds.length > 0) {
     const { data: tipos } = await supabase.from("perfis_tipo").select("id, nome").in("id", tipoIds);

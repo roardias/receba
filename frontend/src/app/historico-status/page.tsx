@@ -80,7 +80,7 @@ export default function HistoricoStatusPage() {
         return;
       }
       const logs = (logData as LogRow[]) ?? [];
-      const chaves = [...new Set(logs.map((r) => r.chave_cliente).filter(Boolean))];
+      const chaves = Array.from(new Set(logs.map((r) => r.chave_cliente).filter(Boolean)));
       if (chaves.length === 0) {
         setEnriquecidos(logs.map((r) => ({ ...r, nome_cliente: "—", grupo: "—", cnpj_cpf_apenas_numeros: "" })));
         setLoading(false);
@@ -100,7 +100,7 @@ export default function HistoricoStatusPage() {
           },
         ])
       );
-      const acessoriaIds = [...new Set((clientes ?? []).map((c: { acessoria_id: string | null }) => c.acessoria_id).filter(Boolean))] as string[];
+      const acessoriaIds = Array.from(new Set((clientes ?? []).map((c: { acessoria_id: string | null }) => c.acessoria_id).filter(Boolean))) as string[];
       const mapaGrupo = new Map<string, string>();
       if (acessoriaIds.length > 0) {
         const { data: acessorias } = await supabase.from("acessorias").select("id, grupo_empresas").in("id", acessoriaIds);

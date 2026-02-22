@@ -471,7 +471,7 @@ export default function DashboardPage() {
   );
 
   useEffect(() => {
-    const chaves = [...new Set(dadosVisiveis.map((r) => r.chave_cliente).filter(Boolean))] as string[];
+    const chaves = Array.from(new Set(dadosVisiveis.map((r) => r.chave_cliente).filter(Boolean))) as string[];
     if (chaves.length === 0) {
       setStatusDashboard({});
       return;
@@ -740,8 +740,8 @@ export default function DashboardPage() {
     setStatusDataNegociado("");
     const chaves: string[] =
       popupAberto?.tipo === "cliente"
-        ? [...new Set((detalheRows.map((r) => r.chave_cliente).filter(Boolean) as string[]))]
-        : [...new Set((movimentosDoGrupo.map((r) => r.chave_cliente).filter(Boolean) as string[]))];
+        ? Array.from(new Set((detalheRows.map((r) => r.chave_cliente).filter(Boolean) as string[])))
+        : Array.from(new Set((movimentosDoGrupo.map((r) => r.chave_cliente).filter(Boolean) as string[])));
     if (chaves.length > 0) {
       supabase
         .from("cliente_status")
@@ -783,12 +783,12 @@ export default function DashboardPage() {
           const doGrupo = dadosAgrupados.filter(
             (g) => (g.grupo_empresas ?? "").toLowerCase() === grupoNome
           );
-          chaves = [...new Set(doGrupo.flatMap((c) => c.rows.map((r) => r.chave_cliente).filter(Boolean) as string[]))];
+          chaves = Array.from(new Set(doGrupo.flatMap((c) => c.rows.map((r) => r.chave_cliente).filter(Boolean) as string[])));
         } else {
-          chaves = [...new Set(detalheRows.map((r) => r.chave_cliente).filter(Boolean) as string[])];
+          chaves = Array.from(new Set(detalheRows.map((r) => r.chave_cliente).filter(Boolean) as string[]));
         }
       } else {
-        chaves = [...new Set(movimentosDoGrupo.map((r) => r.chave_cliente).filter(Boolean) as string[])];
+        chaves = Array.from(new Set(movimentosDoGrupo.map((r) => r.chave_cliente).filter(Boolean) as string[]));
       }
       const dataNegociado =
         statusEscolhido === "negociado_pagamento" && statusDataNegociado.trim()
