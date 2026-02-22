@@ -279,12 +279,12 @@ export default function UsuariosPage() {
       await supabase.from("perfis_categorias").delete().eq("perfil_id", visibilidadeUserId);
       if (visibilidadeGrupos.size > 0) {
         await supabase.from("perfis_grupos").insert(
-          [...visibilidadeGrupos].map((grupo_id) => ({ perfil_id: visibilidadeUserId, grupo_id }))
+          Array.from(visibilidadeGrupos).map((grupo_id) => ({ perfil_id: visibilidadeUserId, grupo_id }))
         );
       }
       if (visibilidadeEmpresas.size > 0) {
         await supabase.from("perfis_empresas").insert(
-          [...visibilidadeEmpresas].map((empresa_id) => ({ perfil_id: visibilidadeUserId, empresa_id }))
+          Array.from(visibilidadeEmpresas).map((empresa_id) => ({ perfil_id: visibilidadeUserId, empresa_id }))
         );
       }
       if (visibilidadeCategorias.size > 0) {
@@ -334,7 +334,7 @@ export default function UsuariosPage() {
       await supabase.from("perfis_permissoes").delete().eq("perfil_id", permissoesUserId);
       if (permissoesSet.size > 0) {
         await supabase.from("perfis_permissoes").insert(
-          [...permissoesSet].map((permissao) => ({ perfil_id: permissoesUserId, permissao }))
+          Array.from(permissoesSet).map((permissao) => ({ perfil_id: permissoesUserId, permissao }))
         );
       }
       setPermissoesUserId(null);
