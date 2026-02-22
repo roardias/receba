@@ -3,6 +3,9 @@ import "./globals.css";
 import { AuthProvider } from "@/contexts/AuthContext";
 import AuthGuard from "@/components/AuthGuard";
 
+// Evita prerender estático no build (ex.: Vercel); as páginas usam Supabase e precisam das env vars em runtime.
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "Receba - Controle de Cobranças",
 };
