@@ -36,8 +36,8 @@ export default function EmailConfigPage() {
   const [mostrarSecret, setMostrarSecret] = useState(false);
   const [testeConfigId, setTesteConfigId] = useState("");
   const [testeTo, setTesteTo] = useState("");
-  const [testeAssunto, setTesteAssunto] = useState("Teste - Sistema Recebx");
-  const [testeDescricao, setTesteDescricao] = useState("Este é um e-mail de teste do sistema Recebx.");
+  const [testeAssunto, setTesteAssunto] = useState("Teste - Sistema Recebi$");
+  const [testeDescricao, setTesteDescricao] = useState("Este é um e-mail de teste do sistema Recebi$.");
   const [testeEnviando, setTesteEnviando] = useState(false);
   const [testeSucesso, setTesteSucesso] = useState<string | null>(null);
   const [testeErro, setTesteErro] = useState<string | null>(null);
@@ -294,7 +294,7 @@ export default function EmailConfigPage() {
                 type="text"
                 value={testeAssunto}
                 onChange={(e) => setTesteAssunto(e.target.value)}
-                placeholder="Teste - Sistema Recebx"
+                placeholder="Teste - Sistema Recebi$"
                 className="w-full px-3 py-2 border rounded"
                 required
               />

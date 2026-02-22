@@ -106,7 +106,7 @@ export async function POST(request: NextRequest) {
     }
 
     const graphUrl = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(c.sender_mailbox)}/sendMail`;
-    const content = (descricao && descricao.trim()) ? descricao.trim() : "E-mail de teste do sistema Recebx.";
+    const content = (descricao && descricao.trim()) ? descricao.trim() : "E-mail de teste do sistema Recebi$.";
     const sendBody = {
       message: {
         subject: subject.trim(),
