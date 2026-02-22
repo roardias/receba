@@ -253,7 +253,7 @@ export default function UsuariosPage() {
     const trim = (s: string) => (s || "").trim();
     const nenhumFiltro = visibilidadeGrupos.size === 0 && visibilidadeEmpresas.size === 0;
     if (nenhumFiltro) {
-      const unicas = [...new Set(categoriasLista.map((c) => trim(c.descricao)).filter(Boolean))];
+      const unicas = Array.from(new Set(categoriasLista.map((c) => trim(c.descricao)).filter(Boolean)));
       return unicas.sort();
     }
     const nomeCurtos = new Set<string>();
@@ -266,7 +266,7 @@ export default function UsuariosPage() {
       .filter((c) => nomeCurtos.has(c.empresa))
       .map((c) => trim(c.descricao))
       .filter(Boolean);
-    return [...new Set(descricoes)].sort();
+    return Array.from(new Set(descricoes)).sort();
   })();
 
   async function salvarVisibilidade() {
@@ -288,7 +288,7 @@ export default function UsuariosPage() {
         );
       }
       if (visibilidadeCategorias.size > 0) {
-        const categoriasUnicas = [...new Set([...visibilidadeCategorias].map((d) => d.trim()).filter(Boolean))];
+        const categoriasUnicas = Array.from(new Set(Array.from(visibilidadeCategorias).map((d) => d.trim()).filter(Boolean)));
         await supabase.from("perfis_categorias").insert(
           categoriasUnicas.map((categoria_descricao) => ({ perfil_id: visibilidadeUserId, categoria_descricao }))
         );
