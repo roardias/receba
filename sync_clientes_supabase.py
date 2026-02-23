@@ -132,7 +132,7 @@ def listar_clientes_omie_completo(app_key: str, app_secret: str) -> list[dict]:
         }
         resp = requests.post(
             ENDPOINT_OMIE,
-            headers={"Content-type": "application/json"},
+            headers={"Content-Type": "application/json"},
             json=payload,
         )
         resp.raise_for_status()

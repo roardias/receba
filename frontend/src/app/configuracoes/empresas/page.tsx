@@ -13,6 +13,7 @@ type Empresa = {
   cnpj: string | null;
   app_key: string | null;
   app_secret_encrypted: string | null;
+  app_secret?: string | null;
   ativo: boolean;
 };
 
@@ -64,17 +65,52 @@ export default function EmpresasPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ valor: appSecret.trim() }),
       });
-      const { encrypted } = await res.json();
-      payload.app_secret_encrypted = encrypted;
+      const json = await res.json();
+      if (res.ok && json.encrypted) {
+        payload.app_secret_encrypted = json.encrypted;
+      }
+      payload.app_secret = appSecret.trim();
     } else if (editando?.app_secret_encrypted) {
       payload.app_secret_encrypted = editando.app_secret_encrypted;
+      if (editando.app_secret) payload.app_secret = editando.app_secret;
+    }
+
+    const { data: { session } } = await supabase.auth.getSession();
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`;
+    else {
+      alert("Sessão não encontrada. Faça login novamente e tente salvar.");
+      return;
     }
 
     if (editando) {
-      await supabase.from("empresas").update(payload).eq("id", editando.id);
+      const res = await fetch(`/api/empresas/${editando.id}`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify(payload),
+      });
+      const dataRes = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg = dataRes.error || `Erro ao atualizar: ${res.status}`;
+        const hint = dataRes._hint;
+        alert(hint ? `${msg}\n\nDica: ${hint}` : msg);
+        return;
+      }
+      if (dataRes._debug_app_secret_saved) {
+        console.log("API confirmou: app_secret gravado no banco.");
+      }
       setEditando(null);
     } else {
-      await supabase.from("empresas").insert(payload);
+      const res = await fetch("/api/empresas", {
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error || `Erro ao adicionar: ${res.status}`);
+        return;
+      }
     }
 
     limparForm();

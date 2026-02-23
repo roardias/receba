@@ -8,6 +8,9 @@ export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Recebi$ - Controle de Cobranças",
+  icons: {
+    icon: "/logo.png",
+  },
 };
 
 export default function RootLayout({

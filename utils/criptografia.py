@@ -1,45 +1,51 @@
 """
 Criptografia para app_secret (credenciais Omie).
 Usa Fernet (AES-128-CBC) com chave em variável de ambiente.
+
+A derivação da chave deve ser igual à do frontend (fernet-server.ts):
+SHA256(ENCRYPTION_KEY) em base64url, para que dados criptografados no frontend
+sejam descriptografados corretamente pelo scheduler/backend.
 """
-import os
 import base64
-from typing import Optional
+import hashlib
+import os
 
 from cryptography.fernet import Fernet, InvalidToken
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+
+
+def _normalizar_chave(key: str) -> str:
+    """Normaliza ENCRYPTION_KEY como no frontend (BOM, aspas, espaços)."""
+    if not key:
+        return ""
+    key = (key.strip() if isinstance(key, str) else key.decode()).strip()
+    key = key.replace("\ufeff", "")  # BOM
+    key = key.strip()
+    # Remove aspas ao redor (como no frontend)
+    if len(key) >= 2 and key[0] in '"\'' and key[-1] == key[0]:
+        key = key[1:-1].strip()
+    return key
+
+
+def _derivar_chave_sha256(senha: str) -> bytes:
+    """Deriva chave Fernet com SHA256 (igual ao frontend: deriveFernetKey)."""
+    digest = hashlib.sha256(senha.encode("utf-8")).digest()
+    return base64.urlsafe_b64encode(digest)
 
 
 def _get_fernet() -> Fernet:
-    """Obtém instância Fernet a partir de ENCRYPTION_KEY."""
+    """Obtém instância Fernet a partir de ENCRYPTION_KEY (mesma lógica do frontend)."""
     key = os.getenv("ENCRYPTION_KEY")
     if not key:
         raise ValueError(
             "ENCRYPTION_KEY não definida no .env. "
             "Execute: python gerar_chave_criptografia.py"
         )
-    key_str = key.strip() if isinstance(key, str) else key.decode()
-    key_bytes = key_str.encode("utf-8")
-    # Chave Fernet = 44 caracteres base64; senão deriva de senha
-    if len(key_str) == 44:
-        try:
-            return Fernet(key_str.encode())
-        except Exception:
-            pass
-    return Fernet(_derivar_chave(key_bytes))
-
-
-def _derivar_chave(senha: bytes) -> bytes:
-    """Deriva chave Fernet a partir de uma senha (PBKDF2)."""
-    salt = b"receba_omie_v1"  # salt fixo para este projeto
-    kdf = PBKDF2HMAC(
-        algorithm=hashes.SHA256(),
-        length=32,
-        salt=salt,
-        iterations=480000,
-    )
-    return base64.urlsafe_b64encode(kdf.derive(senha))
+    key_str = _normalizar_chave(key)
+    if not key_str:
+        raise ValueError("ENCRYPTION_KEY está vazia após normalização.")
+    # Frontend sempre usa SHA256(key) -> base64url; backend usa o mesmo para compatibilidade
+    key_bytes = _derivar_chave_sha256(key_str)
+    return Fernet(key_bytes)
 
 
 def criptografar(valor: str) -> str:

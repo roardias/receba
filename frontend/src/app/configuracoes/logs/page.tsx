@@ -8,6 +8,8 @@ const API_TIPO_LABEL: Record<string, string> = {
   clientes: "Cadastro (clientes)",
   categorias: "Categorias",
   movimento_financeiro: "Movimento Financeiro",
+  pagamentos_realizados: "Pagamentos Realizados",
+  recebimentos_omie: "Recebimentos Omie",
 };
 
 type Log = {

@@ -1,13 +1,28 @@
 """
-API Omie - Pagamentos Realizados (cópia de ListarMovimentos / Movimento Financeiro)
+API Omie - Pagamentos Realizados (ListarMovimentos - Movimento Financeiro)
 Extrai pagamentos realizados com paginação.
-Filtro de data de pagamento: dDtPagtoDe e dDtPagtoAte. O usuário informa ao agendar (--pagto-de e --pagto-ate).
+
+Parâmetros enviados ao Omie (ListarMovimentos):
+  call: "ListarMovimentos"
+  param[0]:
+    nPagina, nRegPorPagina (500),
+    cNatureza: "P" (Pagamento),
+    cTpLancamento: "BXCP" (Baixa por pagamento),
+    lDadosCad: True,
+    cExibirDepartamentos: "S",
+    dDtPagtoDe: data inicial de pagamento (DD/MM/AAAA),
+    dDtPagtoAte: data final de pagamento (DD/MM/AAAA).
+  app_key, app_secret
+
+As datas dDtPagtoDe e dDtPagtoAte vêm do agendamento (pagamentos_data_de, pagamentos_data_ate)
+ou de variáveis de ambiente PAGAMENTOS_PAGTO_DE / PAGAMENTOS_PAGTO_ATE, ou padrão dinâmico (últimos 30 dias).
 """
 
 import argparse
 import csv
 import os
 import time
+from datetime import date, timedelta
 from pathlib import Path
 
 import requests
@@ -19,9 +34,18 @@ ESPERA_ENTRE_TENTATIVAS = 30
 CSV_EMPRESAS = "exemplo_empresas.csv"
 PASTA_SAIDA = "output"
 CSV_SAIDA = "pagamentos_realizados_omie.csv"
-# Valores padrão para teste (usuário pode sobrescrever via linha de comando)
-DATA_PAGTO_DE_PADRAO = "01/01/2026"
-DATA_PAGTO_ATE_PADRAO = "21/02/2026"
+
+
+def _datas_padrao_pagamento() -> tuple[str, str]:
+    """Retorna (dDtPagtoDe, dDtPagtoAte) em DD/MM/AAAA: últimos 30 dias até ontem."""
+    hoje = date.today()
+    ate = hoje - timedelta(days=1)
+    de = ate - timedelta(days=29)
+    return de.strftime("%d/%m/%Y"), ate.strftime("%d/%m/%Y")
+
+
+# Para uso em linha de comando (--pagto-de/--pagto-ate); sync usa agendamento ou _datas_padrao_pagamento()
+DATA_PAGTO_DE_PADRAO, DATA_PAGTO_ATE_PADRAO = _datas_padrao_pagamento()
 
 
 def ler_empresas_csv(caminho: str) -> list[dict]:
@@ -61,7 +85,8 @@ def _chamar_api_com_retry(
         "app_secret": app_secret,
     }
 
-    ultimo_erro = None
+    # Log: exatamente o que está indo para a Omie (aparece no CMD ao rodar o scheduler)
+    print(f"    [Omie] ListarMovimentos dDtPagtoDe={dDtPagtoDe!r} dDtPagtoAte={dDtPagtoAte!r} pagina={pagina}", flush=True)
     for tentativa in range(1, MAX_TENTATIVAS + 1):
         try:
             resp = requests.post(
@@ -256,13 +281,13 @@ def main():
         "--pagto-de",
         metavar="DD/MM/AAAA",
         default=DATA_PAGTO_DE_PADRAO,
-        help=f"Data inicial de pagamento (padrão: {DATA_PAGTO_DE_PADRAO}).",
+        help="Data inicial de pagamento (padrão: 30 dias atrás).",
     )
     parser.add_argument(
         "--pagto-ate",
         metavar="DD/MM/AAAA",
         default=DATA_PAGTO_ATE_PADRAO,
-        help=f"Data final de pagamento (padrão: {DATA_PAGTO_ATE_PADRAO}).",
+        help="Data final de pagamento (padrão: ontem).",
     )
     args = parser.parse_args()
 

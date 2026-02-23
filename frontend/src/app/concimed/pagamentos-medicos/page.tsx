@@ -341,13 +341,13 @@ export default function PagamentosMedicosPage() {
       ) : (
         <div className="mt-4 overflow-auto border border-slate-200 rounded max-h-[calc(100vh-12rem)]">
           <table className="w-full text-sm border-collapse">
-            <thead className="sticky top-0 z-10 bg-slate-100 shadow-[0_1px_0_0_rgba(0,0,0,0.1)]">
+            <thead className="sticky top-0 z-20 bg-slate-100 shadow-[0_1px_0_0_rgba(0,0,0,0.1)] [isolation:isolate]">
               <tr className="text-left">
                 <th className="p-2 border-b border-slate-200 bg-slate-100 min-w-[100px] whitespace-nowrap">
                   Empresa
                 </th>
                 <th
-                  className="p-2 border-b border-slate-200 sticky left-0 bg-slate-100 z-10 min-w-[180px] cursor-pointer select-none hover:bg-slate-200"
+                  className="p-2 border-b border-slate-200 sticky left-0 bg-slate-100 z-20 min-w-[180px] cursor-pointer select-none hover:bg-slate-200"
                   onClick={() => toggleOrdenacao("razao_social")}
                   title="Ordenar por razão social"
                 >
@@ -355,7 +355,7 @@ export default function PagamentosMedicosPage() {
                   {ordenarPor === "razao_social" && (ordemAsc ? " ↑" : " ↓")}
                 </th>
                 <th
-                  className="p-2 border-b border-slate-200 min-w-[120px] cursor-pointer select-none hover:bg-slate-200"
+                  className="p-2 border-b border-slate-200 bg-slate-100 min-w-[120px] cursor-pointer select-none hover:bg-slate-200"
                   onClick={() => toggleOrdenacao("cnpj_cpf")}
                   title="Ordenar por CPF/CNPJ"
                 >
@@ -365,13 +365,13 @@ export default function PagamentosMedicosPage() {
                 {colunasMesAno.map((km) => {
                   const [ano, mes] = km.split("_").map(Number);
                   return (
-                    <th key={km} className="p-2 border-b border-slate-200 whitespace-nowrap min-w-[80px]">
+                    <th key={km} className="p-2 border-b border-slate-200 bg-slate-100 whitespace-nowrap min-w-[80px]">
                       {labelMes(ano, mes)}
                     </th>
                   );
                 })}
                 <th
-                  className="p-2 border-b border-slate-200 min-w-[100px] cursor-pointer select-none hover:bg-slate-200 text-right"
+                  className="p-2 border-b border-slate-200 bg-slate-100 min-w-[100px] cursor-pointer select-none hover:bg-slate-200 text-right"
                   onClick={() => toggleOrdenacao("total")}
                   title="Ordenar por total"
                 >

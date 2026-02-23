@@ -20,6 +20,7 @@ const APIS_DISPONIVEIS = [
   { id: "categorias", label: "Categorias" },
   { id: "movimento_financeiro", label: "Movimento Financeiro" },
   { id: "pagamentos_realizados", label: "Pagamentos Realizados" },
+  { id: "recebimentos_omie", label: "Recebimentos Omie" },
 ];
 
 type Grupo = { id: string; nome: string };

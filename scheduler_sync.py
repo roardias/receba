@@ -30,30 +30,44 @@ from sync_clientes_supabase import (
 from sync_categorias_supabase import executar_sync_categorias_empresas
 from sync_movimentos_supabase import executar_sync_movimentos_empresas
 from sync_pagamentos_realizados_supabase import executar_sync_pagamentos_realizados_empresas
+from sync_recebimentos_supabase import executar_sync_recebimentos_empresas
 from scheduler_status import limpar_em_execucao, registrar_em_execucao
 
-load_dotenv()
+# Carregar .env da raiz do projeto (fonte única de ENCRYPTION_KEY para o scheduler)
+_root = os.path.dirname(os.path.abspath(__file__))
+_env_path = os.path.join(_root, ".env")
+if os.path.isfile(_env_path):
+    load_dotenv(_env_path)
+else:
+    load_dotenv()
+# Frontend .env.local: adiciona variáveis (ex.: SUPABASE_SERVICE_ROLE_KEY) SEM sobrescrever ENCRYPTION_KEY.
+# Assim a chave da raiz (.env) prevalece e deve ser a MESMA no frontend/.env.local para criptografia bater.
+_env_local = os.path.join(_root, "frontend", ".env.local")
+if os.path.isfile(_env_local):
+    load_dotenv(_env_local, override=False)
 
 TZ = ZoneInfo("America/Sao_Paulo")
-INTERVALO_SEGUNDOS = 30  # verifica a cada 30s (dobra chances de acertar o minuto agendado)
+INTERVALO_SEGUNDOS = 60  # verifica a cada 60s o que está agendado e enfileira os jobs de API
 ULTIMO_LOG_VERBOSE = [None]
 SYNC_QUEUE = queue.Queue()
 SUPABASE_CLIENT = None
 # Deduplicação: evita loop e re-disparos indevidos
 # - Jobs duplicados: vários agendamentos para o mesmo grupo/empresas = 1 job só
-# - Cooldown: não re-adicionar o mesmo trabalho em menos de 15 min (evita horários consecutivos)
-ULTIMO_ADDED = {}  # work_key -> timestamp ( quando foi adicionado )
-COOLDOWN_SEGUNDOS = 15 * 60  # 15 minutos entre execuções do mesmo grupo/empresas
+# - Cooldown: por work_key (grupo+empresas). Não enfileirar o mesmo job de novo antes de COOLDOWN_SEGUNDOS.
+#   Job com muitas empresas pode levar vários minutos; com 2 min o scheduler re-enfileirava e gerava execução duplicada.
+ULTIMO_ADDED = {}  # work_key -> timestamp da última vez que foi enfileirado
+COOLDOWN_SEGUNDOS = 15 * 60  # 15 min: não re-enfileirar o mesmo grupo+empresas (evita duplicata quando o job demora vários minutos)
 
 
 def _get_supabase():
-    """Retorna cliente Supabase (criado uma vez)."""
+    """Retorna cliente Supabase (criado uma vez). Prefere service_role para bypass de RLS no sync."""
     global SUPABASE_CLIENT
     if SUPABASE_CLIENT is None:
-        url = os.getenv("SUPABASE_URL")
-        key = os.getenv("SUPABASE_KEY")
+        url = os.getenv("SUPABASE_URL") or os.getenv("NEXT_PUBLIC_SUPABASE_URL")
+        # service_role ignora RLS no Supabase — evita 42501 em recebimentos_omie e outras tabelas de sync
+        key = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_KEY")
         if not url or not key:
-            raise ValueError("SUPABASE_URL e SUPABASE_KEY obrigatórios no .env")
+            raise ValueError("SUPABASE_URL (ou NEXT_PUBLIC_SUPABASE_URL) e SUPABASE_SERVICE_ROLE_KEY (ou SUPABASE_KEY) obrigatórios no .env ou frontend/.env.local")
         SUPABASE_CLIENT = create_client(url, key)
     return SUPABASE_CLIENT
 
@@ -62,7 +76,7 @@ def _log_verbose(horario_verificado: str = ""):
     agora = datetime.now(TZ)
     min_atual = int(agora.timestamp() // 60)
     ultimo = ULTIMO_LOG_VERBOSE[0]
-    if ultimo is None or (min_atual - ultimo) >= 2:
+    if ultimo is None or (min_atual - ultimo) >= 1:
         ULTIMO_LOG_VERBOSE[0] = min_atual
         qsize = SYNC_QUEUE.qsize()
         msg = f"[{agora.strftime('%H:%M:%S')}] Verificado {horario_verificado or agora.strftime('%H:%M')} — scheduler ativo"
@@ -73,29 +87,43 @@ def _log_verbose(horario_verificado: str = ""):
 
 
 def obter_empresas_para_sync(supabase, grupo_ids: list[str], empresa_ids: list[str]) -> list[dict]:
-    """Retorna lista de {nome_curto, app_key, app_secret}."""
+    """
+    Retorna lista de {id, nome_curto, app_key, app_secret} conforme o agendamento.
+    Regra: se empresa_ids não for vazio, usa SOMENTE essas empresas (ignora grupo_ids).
+    Se empresa_ids for vazio, usa as empresas dos grupo_ids. Assim a execução segue exatamente o que foi agendado.
+    """
     empresas = []
     from utils.criptografia import descriptografar
 
+    cols_com_plain = "id, nome_curto, app_key, app_secret_encrypted, app_secret"
+    cols_sem_plain = "id, nome_curto, app_key, app_secret_encrypted"
+
     def _obter_secret(r):
+        plain = (r.get("app_secret") or "").strip()
+        if plain:
+            return plain
         enc = r.get("app_secret_encrypted") or ""
         return descriptografar(enc) if enc else ""
 
-    cols = "id, nome_curto, app_key, app_secret_encrypted"
-    if grupo_ids:
-        res = supabase.from_("empresas").select(cols).in_("grupo_id", grupo_ids).eq("ativo", True).execute()
-        for r in res.data or []:
-            if r.get("app_key"):
-                secret = _obter_secret(r)
-                empresas.append({"nome_curto": r["nome_curto"], "app_key": r["app_key"], "app_secret": secret})
+    def _fetch(cols: str):
+        if empresa_ids:
+            # Agendamento por empresa: somente as empresas selecionadas
+            res = supabase.from_("empresas").select(cols).in_("id", empresa_ids).eq("ativo", True).execute()
+            for r in res.data or []:
+                if r.get("app_key"):
+                    empresas.append({"id": r["id"], "nome_curto": r["nome_curto"], "app_key": r["app_key"], "app_secret": _obter_secret(r)})
+        elif grupo_ids:
+            # Agendamento por grupo: somente as empresas dos grupos selecionados
+            res = supabase.from_("empresas").select(cols).in_("grupo_id", grupo_ids).eq("ativo", True).execute()
+            for r in res.data or []:
+                if r.get("app_key"):
+                    empresas.append({"id": r["id"], "nome_curto": r["nome_curto"], "app_key": r["app_key"], "app_secret": _obter_secret(r)})
 
-    if empresa_ids:
-        res = supabase.from_("empresas").select(cols).in_("id", empresa_ids).eq("ativo", True).execute()
-        for r in res.data or []:
-            if r.get("app_key") and not any(e["nome_curto"] == r["nome_curto"] for e in empresas):
-                secret = _obter_secret(r)
-                empresas.append({"nome_curto": r["nome_curto"], "app_key": r["app_key"], "app_secret": secret})
-
+    try:
+        _fetch(cols_com_plain)
+    except Exception:
+        empresas.clear()
+        _fetch(cols_sem_plain)
     return empresas
 
 
@@ -184,7 +212,7 @@ def listar_jobs_agora(supabase, ignorar_horario: bool = False) -> list[tuple[str
             continue
 
         api_tipos_raw = a.get("api_tipos") or ["clientes"]
-        api_tipos = [t for t in api_tipos_raw if t in ("clientes", "categorias", "movimento_financeiro", "pagamentos_realizados")]
+        api_tipos = [t for t in api_tipos_raw if t in ("clientes", "categorias", "movimento_financeiro", "pagamentos_realizados", "recebimentos_omie")]
         if not api_tipos:
             api_tipos = ["clientes"]
 
@@ -241,6 +269,8 @@ def worker():
                 if not empresas:
                     print(f"  [{label}] Nenhuma empresa com credenciais.", flush=True)
                 else:
+                    origem = "empresa_ids" if empresa_ids else "grupo_ids"
+                    print(f"  [{label}] Executando para {len(empresas)} empresa(s) (agendamento por {origem}).", flush=True)
                     total = 0
                     # Ordem obrigatória: clientes e categorias antes de movimentos (FKs)
                     if "clientes" in api_tipos:
@@ -274,7 +304,11 @@ def worker():
                             print(f"  [{label}] View Concimed (pagamentos) atualizada.", flush=True)
                         except Exception as e:
                             print(f"  [{label}] Aviso: refresh view Concimed: {e}", flush=True)
-                    if "clientes" in api_tipos or "categorias" in api_tipos or "movimento_financeiro" in api_tipos or "pagamentos_realizados" in api_tipos:
+                    if "recebimentos_omie" in api_tipos:
+                        n = executar_sync_recebimentos_empresas(supabase, empresas, label)
+                        total += n
+                        print(f"  [{label}] Recebimentos Omie: {n} registros.", flush=True)
+                    if "clientes" in api_tipos or "categorias" in api_tipos or "movimento_financeiro" in api_tipos or "pagamentos_realizados" in api_tipos or "recebimentos_omie" in api_tipos:
                         print(f"  [{label}] Total: {total} registros.", flush=True)
             except Exception as e:
                 print(f"  [{label}] Erro: {e}", flush=True)
@@ -329,8 +363,9 @@ def ciclo(ignorar_horario: bool = False):
                 jobs_unicos[work_key] = (label, gids, eids, apis, cur_de, cur_ate)
 
     jobs_finais = []
+    ordem_apis = ("clientes", "categorias", "movimento_financeiro", "pagamentos_realizados", "recebimentos_omie")
     for work_key, (label, gids, eids, apis_set, data_de, data_ate) in jobs_unicos.items():
-        api_tipos = [t for t in ("clientes", "categorias", "movimento_financeiro", "pagamentos_realizados") if t in apis_set]
+        api_tipos = [t for t in ordem_apis if t in apis_set]
         if not api_tipos:
             api_tipos = ["clientes"]
         jobs_finais.append((label, gids, eids, api_tipos, data_de, data_ate))
@@ -339,6 +374,7 @@ def ciclo(ignorar_horario: bool = False):
     adicionados = 0
     for label, gids, eids, api_tipos, data_de, data_ate in jobs_ordenados:
         work_key = (tuple(sorted(gids or [])), tuple(sorted(eids or [])))
+        # Cooldown por work_key: evita enfileirar o mesmo job duas vezes seguidas (ex.: verificação às 16:51 e 16:52)
         if not ignorar_horario and work_key in ULTIMO_ADDED:
             if now_ts - ULTIMO_ADDED[work_key] < COOLDOWN_SEGUNDOS:
                 continue
@@ -355,8 +391,37 @@ def main():
     if forcar_agora:
         print("Modo --agora: executando todos os agendamentos do dia uma vez (ignorando horário).", flush=True)
     else:
-        print("Scheduler iniciado. Fila de execução ativa. Verificando a cada 30s (UTC-3). Ctrl+C para parar.", flush=True)
+        print("Scheduler iniciado. Verificando agendamentos a cada 60s (UTC-3). Ctrl+C para parar.", flush=True)
     print("Dica: use SCHEDULER_DEBUG=1 para diagnóstico. Use --agora para forçar execução agora.", flush=True)
+
+    # Diagnóstico de credenciais (evita 403 por app_secret vazio)
+    try:
+        supabase = _get_supabase()
+        try:
+            res = supabase.from_("empresas").select("id, nome_curto, app_key, app_secret_encrypted, app_secret").eq("ativo", True).limit(3).execute()
+        except Exception:
+            res = supabase.from_("empresas").select("id, nome_curto, app_key, app_secret_encrypted").eq("ativo", True).limit(3).execute()
+        from utils.criptografia import descriptografar
+        n_with_key = sum(1 for r in (res.data or []) if r.get("app_key"))
+        n_with_secret = 0
+        for r in res.data or []:
+            plain = (r.get("app_secret") or "").strip()
+            if plain:
+                n_with_secret += 1
+            else:
+                enc = (r.get("app_secret_encrypted") or "").strip()
+                if enc and descriptografar(enc):
+                    n_with_secret += 1
+        enc_ok = bool(os.getenv("ENCRYPTION_KEY", "").strip())
+        if n_with_key > 0 and n_with_secret == 0:
+            if not enc_ok:
+                print("AVISO: ENCRYPTION_KEY não definida e nenhuma empresa com app_secret (texto) no Supabase → 403.", flush=True)
+            else:
+                print("AVISO: Nenhuma empresa com app_secret válido (preencha app_secret no Supabase ou confira app_secret_encrypted + ENCRYPTION_KEY).", flush=True)
+        elif n_with_key > 0 and n_with_secret < n_with_key:
+            print(f"AVISO: Apenas {n_with_secret}/{n_with_key} empresa(s) com secret ok. As demais podem dar 403.", flush=True)
+    except Exception as e:
+        print(f"AVISO: Não foi possível verificar credenciais: {e}", flush=True)
 
     t = threading.Thread(target=worker, daemon=True)
     t.start()

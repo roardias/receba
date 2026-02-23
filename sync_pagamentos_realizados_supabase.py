@@ -13,8 +13,7 @@ from supabase import create_client
 
 from api_omie_pagamentos_realizados import (
     listar_pagamentos_paginado,
-    DATA_PAGTO_DE_PADRAO,
-    DATA_PAGTO_ATE_PADRAO,
+    _datas_padrao_pagamento,
 )
 from api_omie_clientes import ler_empresas_csv
 
@@ -39,6 +38,24 @@ COLUNAS_TABELA = (
     "ValPago_validado",
     "ValAberto_validado",
 )
+
+
+def _normalizar_data_omie(s: str | None) -> str:
+    """Garante data em DD/MM/AAAA para a API Omie. Aceita DD/MM/AAAA ou YYYY-MM-DD."""
+    if not s or not str(s).strip():
+        return ""
+    s = str(s).strip()
+    # YYYY-MM-DD (ex.: vindo do banco em outro formato)
+    if len(s) >= 10 and s[4] == "-" and s[7] == "-":
+        try:
+            y, m, d = s[:4], s[5:7], s[8:10]
+            return f"{d}/{m}/{y}"
+        except (ValueError, TypeError):
+            pass
+    # Já DD/MM/AAAA
+    if "/" in s and len(s) >= 10:
+        return s
+    return s
 
 
 def _apenas_numeros(val: str) -> str:
@@ -114,18 +131,29 @@ def executar_sync_pagamentos_realizados_empresas(
     dDtPagtoAte: str | None = None,
 ) -> int:
     """Executa sync de pagamentos realizados para lista de empresas (usado pelo scheduler).
-    Se dDtPagtoDe/dDtPagtoAte forem informados (ex.: pelo agendamento), usam-se eles; senão env ou padrão."""
+    Datas para a API Omie (dDtPagtoDe, dDtPagtoAte em DD/MM/AAAA):
+    1) Se o agendamento informou pagamentos_data_de e pagamentos_data_ate, usamos eles.
+    2) Senão, variáveis de ambiente PAGAMENTOS_PAGTO_DE e PAGAMENTOS_PAGTO_ATE.
+    3) Senão, padrão dinâmico: últimos 30 dias até ontem."""
     from scheduler_status import limpar_em_execucao, registrar_em_execucao
 
+    prefix = f"  [{label}] " if label else "  "
+    origem_datas = None
     if dDtPagtoDe and dDtPagtoAte:
-        dDtPagtoDe = dDtPagtoDe.strip()
-        dDtPagtoAte = dDtPagtoAte.strip()
+        dDtPagtoDe = _normalizar_data_omie(dDtPagtoDe.strip())
+        dDtPagtoAte = _normalizar_data_omie(dDtPagtoAte.strip())
+        origem_datas = "agendamento"
     if not dDtPagtoDe or not dDtPagtoAte:
-        dDtPagtoDe = os.getenv("PAGAMENTOS_PAGTO_DE", DATA_PAGTO_DE_PADRAO).strip()
-        dDtPagtoAte = os.getenv("PAGAMENTOS_PAGTO_ATE", DATA_PAGTO_ATE_PADRAO).strip()
+        dDtPagtoDe = os.getenv("PAGAMENTOS_PAGTO_DE", "").strip()
+        dDtPagtoAte = os.getenv("PAGAMENTOS_PAGTO_ATE", "").strip()
+        origem_datas = "env" if (dDtPagtoDe and dDtPagtoAte) else None
+    if not dDtPagtoDe or not dDtPagtoAte:
+        dDtPagtoDe, dDtPagtoAte = _datas_padrao_pagamento()
+        origem_datas = "padrão (30 dias até ontem)"
+    # Log no CMD: o que está indo para a Omie
+    print(f"{prefix}[Pagamentos Realizados] Omie: dDtPagtoDe={dDtPagtoDe!r} dDtPagtoAte={dDtPagtoAte!r} (origem: {origem_datas})", flush=True)
 
     total = 0
-    prefix = f"  [{label}] " if label else "  "
     for emp in empresas:
         nome = emp["nome_curto"]
         app_key = emp["app_key"]
@@ -231,8 +259,10 @@ def main():
         print("Nenhuma empresa no CSV.")
         return 1
 
-    dDtPagtoDe = os.getenv("PAGAMENTOS_PAGTO_DE", DATA_PAGTO_DE_PADRAO).strip()
-    dDtPagtoAte = os.getenv("PAGAMENTOS_PAGTO_ATE", DATA_PAGTO_ATE_PADRAO).strip()
+    dDtPagtoDe = os.getenv("PAGAMENTOS_PAGTO_DE", "").strip()
+    dDtPagtoAte = os.getenv("PAGAMENTOS_PAGTO_ATE", "").strip()
+    if not dDtPagtoDe or not dDtPagtoAte:
+        dDtPagtoDe, dDtPagtoAte = _datas_padrao_pagamento()
 
     supabase = create_client(url, key)
     total_geral = 0
