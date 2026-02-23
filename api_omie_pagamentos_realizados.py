@@ -37,11 +37,10 @@ CSV_SAIDA = "pagamentos_realizados_omie.csv"
 
 
 def _datas_padrao_pagamento() -> tuple[str, str]:
-    """Retorna (dDtPagtoDe, dDtPagtoAte) em DD/MM/AAAA: últimos 30 dias até ontem."""
+    """Retorna (dDtPagtoDe, dDtPagtoAte) em DD/MM/AAAA: hoje − 1 ano até hoje."""
     hoje = date.today()
-    ate = hoje - timedelta(days=1)
-    de = ate - timedelta(days=29)
-    return de.strftime("%d/%m/%Y"), ate.strftime("%d/%m/%Y")
+    de = hoje - timedelta(days=365)
+    return de.strftime("%d/%m/%Y"), hoje.strftime("%d/%m/%Y")
 
 
 # Para uso em linha de comando (--pagto-de/--pagto-ate); sync usa agendamento ou _datas_padrao_pagamento()

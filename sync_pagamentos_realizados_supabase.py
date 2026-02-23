@@ -131,27 +131,13 @@ def executar_sync_pagamentos_realizados_empresas(
     dDtPagtoAte: str | None = None,
 ) -> int:
     """Executa sync de pagamentos realizados para lista de empresas (usado pelo scheduler).
-    Datas para a API Omie (dDtPagtoDe, dDtPagtoAte em DD/MM/AAAA):
-    1) Se o agendamento informou pagamentos_data_de e pagamentos_data_ate, usamos eles.
-    2) Senão, variáveis de ambiente PAGAMENTOS_PAGTO_DE e PAGAMENTOS_PAGTO_ATE.
-    3) Senão, padrão dinâmico: últimos 30 dias até ontem."""
+    Datas para a API Omie: sempre fixas = hoje e hoje − 1 ano (ignoramos agendamento e env)."""
     from scheduler_status import limpar_em_execucao, registrar_em_execucao
 
+    # Regra fixa: sempre usar hoje e 1 ano para trás (não usar datas do agendamento)
+    dDtPagtoDe, dDtPagtoAte = _datas_padrao_pagamento()
     prefix = f"  [{label}] " if label else "  "
-    origem_datas = None
-    if dDtPagtoDe and dDtPagtoAte:
-        dDtPagtoDe = _normalizar_data_omie(dDtPagtoDe.strip())
-        dDtPagtoAte = _normalizar_data_omie(dDtPagtoAte.strip())
-        origem_datas = "agendamento"
-    if not dDtPagtoDe or not dDtPagtoAte:
-        dDtPagtoDe = os.getenv("PAGAMENTOS_PAGTO_DE", "").strip()
-        dDtPagtoAte = os.getenv("PAGAMENTOS_PAGTO_ATE", "").strip()
-        origem_datas = "env" if (dDtPagtoDe and dDtPagtoAte) else None
-    if not dDtPagtoDe or not dDtPagtoAte:
-        dDtPagtoDe, dDtPagtoAte = _datas_padrao_pagamento()
-        origem_datas = "padrão (30 dias até ontem)"
-    # Log no CMD: o que está indo para a Omie
-    print(f"{prefix}[Pagamentos Realizados] Omie: dDtPagtoDe={dDtPagtoDe!r} dDtPagtoAte={dDtPagtoAte!r} (origem: {origem_datas})", flush=True)
+    print(f"{prefix}[Pagamentos Realizados] Omie: dDtPagtoDe={dDtPagtoDe!r} dDtPagtoAte={dDtPagtoAte!r} (período fixo: último ano)", flush=True)
 
     total = 0
     for emp in empresas:

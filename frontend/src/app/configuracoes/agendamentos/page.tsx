@@ -119,12 +119,7 @@ export default function AgendamentosPage() {
       alert("Selecione pelo menos uma API para agendar.");
       return;
     }
-    if (apiTipos.includes("pagamentos_realizados")) {
-      if (!pagamentosDataDe?.trim() || !pagamentosDataAte?.trim()) {
-        alert("Para Pagamentos Realizados, informe o período: Data de e Data até.");
-        return;
-      }
-    }
+    // Pagamentos Realizados usa período fixo (hoje − 1 ano até hoje); não exige datas do usuário
     if (tipo === "grupo" && grupoIds.length === 0) {
       alert("Selecione pelo menos um grupo.");
       return;
@@ -165,13 +160,9 @@ export default function AgendamentosPage() {
       timezone: TIMEZONE,
       ativo,
     };
-    if (apiTipos.includes("pagamentos_realizados")) {
-      payload.pagamentos_data_de = toDDMMAAAA(pagamentosDataDe);
-      payload.pagamentos_data_ate = toDDMMAAAA(pagamentosDataAte);
-    } else {
-      payload.pagamentos_data_de = null;
-      payload.pagamentos_data_ate = null;
-    }
+    // Pagamentos Realizados usa período fixo no backend (hoje − 1 ano até hoje); não enviamos datas
+    payload.pagamentos_data_de = null;
+    payload.pagamentos_data_ate = null;
 
     let error = null;
     if (editando) {
@@ -293,29 +284,9 @@ export default function AgendamentosPage() {
             ))}
           </div>
           {apiTipos.includes("pagamentos_realizados") && (
-            <div className="mt-3 p-3 bg-slate-50 border rounded space-y-2">
-              <span className="text-sm font-medium text-slate-700">Período para Pagamentos Realizados</span>
-              <div className="flex flex-wrap gap-4 items-center">
-                <label className="flex flex-col gap-1">
-                  <span className="text-xs text-slate-500">Data de</span>
-                  <input
-                    type="date"
-                    value={pagamentosDataDe}
-                    onChange={(e) => setPagamentosDataDe(e.target.value)}
-                    className="border rounded px-2 py-1"
-                  />
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span className="text-xs text-slate-500">Data até</span>
-                  <input
-                    type="date"
-                    value={pagamentosDataAte}
-                    onChange={(e) => setPagamentosDataAte(e.target.value)}
-                    className="border rounded px-2 py-1"
-                  />
-                </label>
-              </div>
-            </div>
+            <p className="mt-2 text-sm text-slate-500">
+              Período usado automaticamente: último ano (de hoje até 1 ano atrás).
+            </p>
           )}
         </div>
 
