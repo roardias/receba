@@ -56,6 +56,8 @@ export default function AgendamentosPage() {
   const [ativo, setAtivo] = useState(true);
   const [pagamentosDataDe, setPagamentosDataDe] = useState("");
   const [pagamentosDataAte, setPagamentosDataAte] = useState("");
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [syncResult, setSyncResult] = useState<{ ok: boolean; message: string; detail?: unknown } | null>(null);
 
   async function carregar() {
     const [resAg, resGrupos, resEmpresas] = await Promise.all([
@@ -252,6 +254,44 @@ export default function AgendamentosPage() {
     else setGrupoIds([]);
   }
 
+  async function configurarSincronizacao() {
+    setSyncResult(null);
+    setSyncLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) {
+        setSyncResult({ ok: false, message: "Faça login para configurar a sincronização." });
+        return;
+      }
+      const res = await fetch("/api/configurar-sincronizacao", {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setSyncResult({
+          ok: false,
+          message: data?.error || `Erro ${res.status}`,
+          detail: data?.detail,
+        });
+        return;
+      }
+      const jobs = data?.jobs_criados ?? data?.jobsCriados;
+      const msg = typeof jobs === "number"
+        ? `Sincronização configurada. ${jobs} job(s) agendado(s) no Supabase.`
+        : "Sincronização configurada no Supabase.";
+      setSyncResult({ ok: true, message: msg, detail: data });
+    } catch (e) {
+      setSyncResult({
+        ok: false,
+        message: e instanceof Error ? e.message : "Erro ao configurar sincronização.",
+      });
+    } finally {
+      setSyncLoading(false);
+    }
+  }
+
   if (loading) return <p>Carregando...</p>;
 
   return (
@@ -428,6 +468,33 @@ export default function AgendamentosPage() {
           )}
         </div>
       </form>
+      )}
+
+      {podeEditar && (
+        <div className="mt-8 p-4 border rounded-lg bg-slate-50 max-w-xl">
+          <h2 className="text-lg font-semibold text-slate-800 mb-2">Sincronização automática (Supabase)</h2>
+          <p className="text-sm text-slate-600 mb-3">
+            Após salvar os agendamentos acima, clique aqui para aplicar no Supabase. Os jobs serão criados e a API de clientes rodará nos dias e horários configurados.
+          </p>
+          <button
+            type="button"
+            onClick={configurarSincronizacao}
+            disabled={syncLoading}
+            className="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 disabled:opacity-50"
+          >
+            {syncLoading ? "Configurando…" : "Configurar sincronização (Supabase)"}
+          </button>
+          {syncResult && (
+            <div className={`mt-3 text-sm ${syncResult.ok ? "text-green-700" : "text-red-700"}`}>
+              {syncResult.message}
+              {!syncResult.ok && syncResult.detail != null && (
+                <pre className="mt-1 text-xs text-slate-600 overflow-auto max-h-24">
+                  {typeof syncResult.detail === "object" ? JSON.stringify(syncResult.detail, null, 2) : String(syncResult.detail)}
+                </pre>
+              )}
+            </div>
+          )}
+        </div>
       )}
 
       <div className="mt-8">
