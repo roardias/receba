@@ -762,6 +762,8 @@ export default function DashboardPage() {
   const [ligacaoMotivoDesconto, setLigacaoMotivoDesconto] = useState("");
   const [ligacaoObservacao, setLigacaoObservacao] = useState("");
   const [ligacaoDataContato, setLigacaoDataContato] = useState("");
+  const [ligacaoTelefone, setLigacaoTelefone] = useState("");
+  const [ligacaoTelefoneTipo, setLigacaoTelefoneTipo] = useState<"celular" | "fixo" | null>(null);
   const [ligacaoSalvando, setLigacaoSalvando] = useState(false);
   const [ligacaoSucesso, setLigacaoSucesso] = useState<string | null>(null);
 
@@ -773,8 +775,12 @@ export default function DashboardPage() {
   const [whatsappNomeConversou, setWhatsappNomeConversou] = useState("");
   const [whatsappCargoConversou, setWhatsappCargoConversou] = useState("");
   const [whatsappDataContato, setWhatsappDataContato] = useState("");
+  const [whatsappTelefone, setWhatsappTelefone] = useState("");
+  const [whatsappTelefoneTipo, setWhatsappTelefoneTipo] = useState<"celular" | "fixo" | null>(null);
   const [whatsappSalvando, setWhatsappSalvando] = useState(false);
   const [whatsappSucesso, setWhatsappSucesso] = useState<string | null>(null);
+
+  const hojeStr = new Date().toISOString().slice(0, 10);
 
   const [statusModalAberto, setStatusModalAberto] = useState(false);
   const [statusEscolhido, setStatusEscolhido] = useState<string>("em_cobranca");
@@ -1094,12 +1100,33 @@ export default function DashboardPage() {
     ? empresaSelecionada.nome_curto
     : empresasFiltradas.map((e) => e.nome_curto).join(", ");
 
+  function soNumerosTelefone(s: string): string {
+    return (s || "").replace(/\D/g, "");
+  }
+  function validaTelefone(telefone: string, tipo: "celular" | "fixo" | null): { ok: boolean; msg?: string; valor?: string } {
+    const nums = soNumerosTelefone(telefone);
+    if (!tipo) return { ok: false, msg: "Informe se o número é celular ou fixo." };
+    if (!nums) return { ok: false, msg: "Informe o número de telefone." };
+    if (tipo === "celular" && nums.length !== 11) return { ok: false, msg: "Celular deve ter 11 dígitos (DDD + número)." };
+    if (tipo === "fixo" && nums.length !== 10) return { ok: false, msg: "Fixo deve ter 10 dígitos (DDD + número)." };
+    return { ok: true, valor: nums };
+  }
+
   async function salvarLigacao() {
     const clientes = getCobrancaClientesContext();
     if (clientes.length === 0) return;
     if (ligacaoFoiAtendido === null) return;
     if (!ligacaoDataContato) {
       alert("Informe a data do contato da ligação.");
+      return;
+    }
+    if (ligacaoDataContato > hojeStr) {
+      alert("A data do contato não pode ser futura.");
+      return;
+    }
+    const tel = validaTelefone(ligacaoTelefone, ligacaoTelefoneTipo);
+    if (!tel.ok) {
+      alert(tel.msg);
       return;
     }
     setLigacaoSalvando(true);
@@ -1117,6 +1144,8 @@ export default function DashboardPage() {
         grupo_id: grupoId || null,
         empresa_id: empresaSelecionada?.id || null,
         data_contato: ligacaoDataContato,
+        telefone_contato: tel.valor!,
+        telefone_tipo: ligacaoTelefoneTipo!,
         foi_atendido: ligacaoFoiAtendido,
         nome_pessoa: ligacaoFoiAtendido ? (ligacaoNomePessoa.trim() || null) : null,
         cargo_pessoa: ligacaoFoiAtendido ? (ligacaoCargoPessoa.trim() || null) : null,
@@ -1147,6 +1176,15 @@ export default function DashboardPage() {
       alert("Informe a data do contato do WhatsApp.");
       return;
     }
+    if (whatsappDataContato > hojeStr) {
+      alert("A data do contato não pode ser futura.");
+      return;
+    }
+    const tel = validaTelefone(whatsappTelefone, whatsappTelefoneTipo);
+    if (!tel.ok) {
+      alert(tel.msg);
+      return;
+    }
     setWhatsappSalvando(true);
     setWhatsappSucesso(null);
     try {
@@ -1162,6 +1200,8 @@ export default function DashboardPage() {
         grupo_id: grupoId || null,
         empresa_id: empresaSelecionada?.id || null,
         data_contato: whatsappDataContato,
+        telefone_contato: tel.valor!,
+        telefone_tipo: whatsappTelefoneTipo!,
         mensagem_whatsapp_enviada: whatsappMensagemEnviada.trim() || null,
         observacao: whatsappObservacao.trim() || null,
         houve_negociacao: whatsappHouveNegociacao,
@@ -2045,7 +2085,37 @@ export default function DashboardPage() {
                       <input
                         type="date"
                         value={ligacaoDataContato}
+                        max={hojeStr}
                         onChange={(e) => setLigacaoDataContato(e.target.value)}
+                        className="w-full px-3 py-2 border rounded"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                        Tipo de telefone <span className="text-red-500">*</span>
+                      </label>
+                      <div className="flex gap-4">
+                        <label className="inline-flex items-center gap-2 cursor-pointer">
+                          <input type="radio" name="ligacaoTipoTel" checked={ligacaoTelefoneTipo === "celular"} onChange={() => setLigacaoTelefoneTipo("celular")} className="rounded" />
+                          Celular (11 dígitos)
+                        </label>
+                        <label className="inline-flex items-center gap-2 cursor-pointer">
+                          <input type="radio" name="ligacaoTipoTel" checked={ligacaoTelefoneTipo === "fixo"} onChange={() => setLigacaoTelefoneTipo("fixo")} className="rounded" />
+                          Fixo (10 dígitos)
+                        </label>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                        Número de telefone <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={ligacaoTelefone}
+                        onChange={(e) => setLigacaoTelefone(soNumerosTelefone(e.target.value))}
+                        placeholder="Ex: 61999999999"
+                        maxLength={11}
                         className="w-full px-3 py-2 border rounded"
                       />
                     </div>
@@ -2163,7 +2233,37 @@ export default function DashboardPage() {
                       <input
                         type="date"
                         value={whatsappDataContato}
+                        max={hojeStr}
                         onChange={(e) => setWhatsappDataContato(e.target.value)}
+                        className="w-full px-3 py-2 border rounded"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                        Tipo de telefone <span className="text-red-500">*</span>
+                      </label>
+                      <div className="flex gap-4">
+                        <label className="inline-flex items-center gap-2 cursor-pointer">
+                          <input type="radio" name="whatsappTipoTel" checked={whatsappTelefoneTipo === "celular"} onChange={() => setWhatsappTelefoneTipo("celular")} className="rounded" />
+                          Celular (11 dígitos)
+                        </label>
+                        <label className="inline-flex items-center gap-2 cursor-pointer">
+                          <input type="radio" name="whatsappTipoTel" checked={whatsappTelefoneTipo === "fixo"} onChange={() => setWhatsappTelefoneTipo("fixo")} className="rounded" />
+                          Fixo (10 dígitos)
+                        </label>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                        Número de telefone <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={whatsappTelefone}
+                        onChange={(e) => setWhatsappTelefone(soNumerosTelefone(e.target.value))}
+                        placeholder="Ex: 61999999999"
+                        maxLength={11}
                         className="w-full px-3 py-2 border rounded"
                       />
                     </div>

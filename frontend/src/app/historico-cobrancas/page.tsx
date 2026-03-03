@@ -67,6 +67,8 @@ export default function HistoricoCobrancasPage() {
   const [editingDataContato, setEditingDataContato] = useState("");
   const [savingObsId, setSavingObsId] = useState<string | null>(null);
 
+  const hojeStr = new Date().toISOString().slice(0, 10);
+
   useEffect(() => {
     (async () => {
       const {
@@ -202,6 +204,10 @@ export default function HistoricoCobrancasPage() {
   }
 
   async function salvarObs(id: string, valor: string, dataContato: string) {
+    if (dataContato && dataContato > hojeStr) {
+      alert("A data de contato não pode ser futura.");
+      return;
+    }
     setSavingObsId(id);
     const dataContatoVal = dataContato.trim() || null;
     const { error } = await supabase
@@ -345,6 +351,7 @@ export default function HistoricoCobrancasPage() {
                                 <input
                                   type="date"
                                   value={editingDataContato}
+                                  max={hojeStr}
                                   onChange={(e) => setEditingDataContato(e.target.value)}
                                   className="p-1 border rounded text-sm"
                                 />

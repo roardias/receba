@@ -232,7 +232,7 @@ export async function POST(request: NextRequest) {
       : [];
     if (clientes.length > 0) {
       const registroId = crypto.randomUUID();
-      const now = new Date().toISOString();
+      const dataContatoHoje = new Date().toISOString().slice(0, 10);
       const rows = clientes.map((cliente) => ({
         registro_id: registroId,
         tipo: "email",
@@ -243,6 +243,7 @@ export async function POST(request: NextRequest) {
         empresas_internas_nomes: empresasInternasNomes,
         grupo_id: grupoIdCobranca,
         empresa_id: empresaIdCobranca,
+        data_contato: dataContatoHoje,
         emails_destinatarios: addresses.join(", "),
         email_remetente: c.sender_mailbox,
       }));
