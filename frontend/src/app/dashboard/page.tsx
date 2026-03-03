@@ -638,7 +638,9 @@ export default function DashboardPage() {
       }
     >();
 
-    for (const g of dadosFiltrados) {
+    // Quadro resumo: usa todos os dados agrupados (independente de filtros de busca/status),
+    // respeitando apenas grupo/empresa/categorias carregados.
+    for (const g of dadosAgrupados) {
       const chave = g.rows[0]?.chave_cliente;
       const info = chave ? (statusPorChave[chave] ?? statusDashboard[chave]) : null;
       const statusValue = info?.status ?? "em_cobranca";
@@ -660,7 +662,7 @@ export default function DashboardPage() {
       return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
     });
     return items;
-  }, [dadosFiltrados, statusDashboard, statusPorChave]);
+  }, [dadosAgrupados, statusDashboard, statusPorChave]);
 
   const dadosOrdenados = [...dadosFiltradosPorStatus].sort((a, b) => {
     let cmp = 0;
