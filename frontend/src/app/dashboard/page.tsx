@@ -614,6 +614,54 @@ export default function DashboardPage() {
     });
   }, [dadosFiltrados, filtroStatus, statusDashboard, statusPorChave]);
 
+  const totaisColunas = useMemo(
+    () =>
+      dadosFiltradosPorStatus.reduce(
+        (acc, g) => {
+          acc.valPago += g.valPago;
+          acc.valAberto += g.valAberto;
+          acc.valAtualizado += g.valAtualizado;
+          return acc;
+        },
+        { valPago: 0, valAberto: 0, valAtualizado: 0 }
+      ),
+    [dadosFiltradosPorStatus]
+  );
+
+  const resumoPorStatus = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        value: string;
+        label: string;
+        total: number;
+      }
+    >();
+
+    for (const g of dadosFiltrados) {
+      const chave = g.rows[0]?.chave_cliente;
+      const info = chave ? (statusPorChave[chave] ?? statusDashboard[chave]) : null;
+      const statusValue = info?.status ?? "em_cobranca";
+      const opt = STATUS_OPCOES.find((o) => o.value === statusValue);
+      const label = opt?.label ?? statusValue;
+      const existing = map.get(statusValue);
+      if (existing) {
+        existing.total += g.valAtualizado;
+      } else {
+        map.set(statusValue, { value: statusValue, label, total: g.valAtualizado });
+      }
+    }
+
+    const items = Array.from(map.values());
+    // ordenar pela ordem de STATUS_OPCOES
+    items.sort((a, b) => {
+      const ia = STATUS_OPCOES.findIndex((o) => o.value === a.value);
+      const ib = STATUS_OPCOES.findIndex((o) => o.value === b.value);
+      return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
+    });
+    return items;
+  }, [dadosFiltrados, statusDashboard, statusPorChave]);
+
   const dadosOrdenados = [...dadosFiltradosPorStatus].sort((a, b) => {
     let cmp = 0;
     if (sortCol === "cod") {
@@ -1216,6 +1264,26 @@ export default function DashboardPage() {
         Contas a Receber — filtre por grupo e empresa
       </p>
 
+      {grupoId && !loadingDados && dadosVisiveis.length > 0 && resumoPorStatus.length > 0 && (
+        <div className="mt-4 flex justify-end">
+          <div className="w-full max-w-sm rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
+            <p className="font-semibold text-slate-800 mb-2">
+              Resumo por status (Val. Atualizado)
+            </p>
+            <dl className="space-y-1">
+              {resumoPorStatus.map((item) => (
+                <div key={item.value} className="flex items-center justify-between">
+                  <dt className="text-slate-600">{item.label}</dt>
+                  <dd className="font-medium text-slate-900">
+                    {formatarMoeda(item.total)}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        </div>
+      )}
+
       <div className="mt-6 flex flex-wrap gap-4 items-end">
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -1314,6 +1382,26 @@ export default function DashboardPage() {
           <p className="text-slate-500">Nenhum registro encontrado.</p>
         ) : (
           <>
+            <div className="mt-2 flex justify-end gap-6 text-sm text-slate-700">
+              <span>
+                Val. Pago:{" "}
+                <strong className="font-semibold">
+                  {formatarMoeda(totaisColunas.valPago)}
+                </strong>
+              </span>
+              <span>
+                Val. Aberto:{" "}
+                <strong className="font-semibold">
+                  {formatarMoeda(totaisColunas.valAberto)}
+                </strong>
+              </span>
+              <span>
+                Val. Atualizado:{" "}
+                <strong className="font-semibold">
+                  {formatarMoeda(totaisColunas.valAtualizado)}
+                </strong>
+              </span>
+            </div>
             <div className="overflow-x-auto border rounded mt-4">
               <table className="w-full text-sm">
                 <thead className="bg-slate-100">
