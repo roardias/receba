@@ -46,8 +46,10 @@ export async function GET(req: NextRequest) {
     }
 
     if (CRON_SECRET) {
-      const auth = req.headers.get("x-cron-secret");
-      if (auth !== CRON_SECRET) {
+      const url = new URL(req.url);
+      const authHeader = req.headers.get("x-cron-secret");
+      const authQuery = url.searchParams.get("secret");
+      if (authHeader !== CRON_SECRET && authQuery !== CRON_SECRET) {
         return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
       }
     }
