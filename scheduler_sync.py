@@ -277,6 +277,11 @@ def worker():
                         n = executar_sync_empresas(supabase, empresas, label)
                         total += n
                         print(f"  [{label}] Clientes: {n} registros.", flush=True)
+                        try:
+                            supabase.rpc("refresh_dashboard_receber_apos_acessorias").execute()
+                            print(f"  [{label}] Grupos/view inadimplentes atualizados.", flush=True)
+                        except Exception as e:
+                            print(f"  [{label}] Aviso: refresh grupos/dashboard: {e}", flush=True)
                     if "categorias" in api_tipos:
                         n = executar_sync_categorias_empresas(supabase, empresas, label)
                         total += n
@@ -287,10 +292,10 @@ def worker():
                         total += n
                         print(f"  [{label}] Movimentos: {n} registros.", flush=True)
                         try:
-                            supabase.rpc("refresh_dashboard_receber").execute()
-                            print(f"  [{label}] Dashboard atualizado.", flush=True)
+                            supabase.rpc("refresh_dashboard_receber_apos_acessorias").execute()
+                            print(f"  [{label}] Grupos/view inadimplentes atualizados.", flush=True)
                         except Exception as e:
-                            print(f"  [{label}] Aviso: refresh dashboard: {e}", flush=True)
+                            print(f"  [{label}] Aviso: refresh grupos/dashboard: {e}", flush=True)
                     if "pagamentos_realizados" in api_tipos:
                         n = executar_sync_pagamentos_realizados_empresas(
                             supabase, empresas, label,
