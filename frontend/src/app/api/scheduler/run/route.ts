@@ -18,20 +18,23 @@ function getNowInSaoPaulo() {
   const parts = fmt.formatToParts(now);
   const hour = parts.find((p) => p.type === "hour")?.value ?? "00";
   const minute = parts.find((p) => p.type === "minute")?.value ?? "00";
-  const weekdayShort = (parts.find((p) => p.type === "weekday")?.value ?? "").toLowerCase();
+  const weekdayRaw = (parts.find((p) => p.type === "weekday")?.value ?? "").toLowerCase();
 
-  const mapDia: Record<string, number> = {
-    seg: 1,
-    ter: 2,
-    qua: 3,
-    qui: 4,
-    sex: 5,
-    sáb: 6,
-    sab: 6,
-    dom: 7,
-  };
+  // Normalizar para lidar com formatos tipo "segunda-feira", "seg.", "seg"
+  const weekdayNorm = weekdayRaw
+    .replace("-feira", "")
+    .replace(".", "")
+    .trim();
 
-  const diaSemana = mapDia[weekdayShort] ?? 1;
+  let diaSemana = 1;
+  if (weekdayNorm.startsWith("seg")) diaSemana = 1;
+  else if (weekdayNorm.startsWith("ter")) diaSemana = 2;
+  else if (weekdayNorm.startsWith("qua")) diaSemana = 3;
+  else if (weekdayNorm.startsWith("qui")) diaSemana = 4;
+  else if (weekdayNorm.startsWith("sex")) diaSemana = 5;
+  else if (weekdayNorm.startsWith("sab") || weekdayNorm.startsWith("sáb")) diaSemana = 6;
+  else if (weekdayNorm.startsWith("dom")) diaSemana = 7;
+
   const horario = `${hour}:${minute}`;
   return { diaSemana, horario };
 }
