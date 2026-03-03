@@ -10,6 +10,7 @@ type Empresa = { id: string; nome_curto: string; grupo_id: string | null };
 type Cobranca = {
   id: string;
   created_at: string;
+  data_contato: string | null;
   tipo: "email" | "ligacao" | "whatsapp";
   cliente_nome: string | null;
   grupo_nome: string | null;
@@ -25,19 +26,9 @@ function soNumeros(s: string): string {
   return (s || "").replace(/\D/g, "");
 }
 
-function formataDataHora(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleString("pt-BR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
+/** Formata data (YYYY-MM-DD ou ISO) para exibição pt-BR */
 function formataData(iso: string): string {
-  return new Date(iso).toLocaleDateString("pt-BR", {
+  return new Date(iso + (iso.length === 10 ? "T12:00:00" : "")).toLocaleDateString("pt-BR", {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -73,6 +64,7 @@ export default function HistoricoCobrancasPage() {
 
   const [editingObsId, setEditingObsId] = useState<string | null>(null);
   const [editingObsValue, setEditingObsValue] = useState("");
+  const [editingDataContato, setEditingDataContato] = useState("");
   const [savingObsId, setSavingObsId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -122,9 +114,9 @@ export default function HistoricoCobrancasPage() {
     // 1) Cobranças com grupo_id preenchido (após migration de relacionamentos)
     let q = supabase
       .from("cobrancas_realizadas")
-      .select("id, created_at, tipo, cliente_nome, grupo_nome, empresas_internas_nomes, observacao, cod_cliente, cnpj_cpf, grupo_id, empresa_id")
+      .select("id, created_at, data_contato, tipo, cliente_nome, grupo_nome, empresas_internas_nomes, observacao, cod_cliente, cnpj_cpf, grupo_id, empresa_id")
       .eq("grupo_id", grupoId)
-      .order("created_at", { ascending: false });
+      .order("data_contato", { ascending: false, nullsFirst: false });
 
     if (empresaSelecionada) {
       q = q.eq("empresa_id", empresaSelecionada.id);
@@ -144,10 +136,10 @@ export default function HistoricoCobrancasPage() {
       if (list.length === 0) {
         let qFallback = supabase
           .from("cobrancas_realizadas")
-          .select("id, created_at, tipo, cliente_nome, grupo_nome, empresas_internas_nomes, observacao, cod_cliente, cnpj_cpf, grupo_id, empresa_id")
+          .select("id, created_at, data_contato, tipo, cliente_nome, grupo_nome, empresas_internas_nomes, observacao, cod_cliente, cnpj_cpf, grupo_id, empresa_id")
           .is("grupo_id", null)
           .ilike("grupo_nome", grupoSelecionado.nome)
-          .order("created_at", { ascending: false });
+          .order("data_contato", { ascending: false, nullsFirst: false });
         if (empresaSelecionada) {
           qFallback = qFallback.ilike("empresas_internas_nomes", "%" + empresaSelecionada.nome_curto + "%");
         }
@@ -195,7 +187,7 @@ export default function HistoricoCobrancasPage() {
       map.get(chave)!.push(c);
     }
     Array.from(map.values()).forEach((arr) => {
-      arr.sort((a, b) => b.created_at.localeCompare(a.created_at));
+      arr.sort((a, b) => (b.data_contato || b.created_at).localeCompare(a.data_contato || a.created_at));
     });
     return Array.from(map.entries()).sort((a, b) => {
       const nomeA = (a[1][0]?.cliente_nome ?? "").toLowerCase();
@@ -209,27 +201,29 @@ export default function HistoricoCobrancasPage() {
     setEmpresaId("");
   }
 
-  async function salvarObs(id: string, valor: string) {
+  async function salvarObs(id: string, valor: string, dataContato: string) {
     setSavingObsId(id);
+    const dataContatoVal = dataContato.trim() || null;
     const { error } = await supabase
       .from("cobrancas_realizadas")
-      .update({ observacao: valor.trim() || null })
+      .update({ observacao: valor.trim() || null, data_contato: dataContatoVal })
       .eq("id", id);
     setSavingObsId(null);
     setEditingObsId(null);
     if (error) {
       console.error(error);
-      alert("Não foi possível salvar a observação. Tente novamente.");
+      alert("Não foi possível salvar. Tente novamente.");
       return;
     }
     setCobrancas((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, observacao: valor.trim() || null } : c))
+      prev.map((c) => (c.id === id ? { ...c, observacao: valor.trim() || null, data_contato: dataContatoVal } : c))
     );
   }
 
   function iniciarEditarObs(c: Cobranca) {
     setEditingObsId(c.id);
     setEditingObsValue(c.observacao ?? "");
+    setEditingDataContato(c.data_contato || c.created_at.slice(0, 10));
   }
 
   if (!hasPermissao("menu_historico_cobrancas")) {
@@ -338,7 +332,7 @@ export default function HistoricoCobrancasPage() {
                       <thead className="bg-slate-100">
                         <tr>
                           <th className="text-left p-2">Forma de contato</th>
-                          <th className="text-left p-2">Data/hora</th>
+                          <th className="text-left p-2">Data</th>
                           <th className="text-left p-2">Obs.</th>
                         </tr>
                       </thead>
@@ -346,7 +340,18 @@ export default function HistoricoCobrancasPage() {
                         {itens.map((c) => (
                           <tr key={c.id} className="border-t border-slate-100 hover:bg-slate-50">
                             <td className="p-2">{formaContato(c.tipo)}</td>
-                            <td className="p-2 text-slate-600">{formataDataHora(c.created_at)}</td>
+                            <td className="p-2 text-slate-600">
+                              {podeEditarObs && editingObsId === c.id ? (
+                                <input
+                                  type="date"
+                                  value={editingDataContato}
+                                  onChange={(e) => setEditingDataContato(e.target.value)}
+                                  className="p-1 border rounded text-sm"
+                                />
+                              ) : (
+                                formataData(c.data_contato || c.created_at)
+                              )}
+                            </td>
                             <td className="p-2 max-w-md align-top">
                               {podeEditarObs && editingObsId === c.id ? (
                                 <div className="flex flex-col gap-1">
@@ -365,7 +370,7 @@ export default function HistoricoCobrancasPage() {
                                   <div className="flex gap-2">
                                     <button
                                       type="button"
-                                      onClick={() => salvarObs(c.id, editingObsValue)}
+                                      onClick={() => salvarObs(c.id, editingObsValue, editingDataContato)}
                                       disabled={savingObsId === c.id}
                                       className="px-2 py-1 bg-slate-700 text-white text-xs rounded hover:bg-slate-600 disabled:opacity-50"
                                     >

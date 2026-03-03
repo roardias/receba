@@ -761,6 +761,7 @@ export default function DashboardPage() {
   const [ligacaoValorDesconto, setLigacaoValorDesconto] = useState("");
   const [ligacaoMotivoDesconto, setLigacaoMotivoDesconto] = useState("");
   const [ligacaoObservacao, setLigacaoObservacao] = useState("");
+  const [ligacaoDataContato, setLigacaoDataContato] = useState("");
   const [ligacaoSalvando, setLigacaoSalvando] = useState(false);
   const [ligacaoSucesso, setLigacaoSucesso] = useState<string | null>(null);
 
@@ -771,6 +772,7 @@ export default function DashboardPage() {
   const [whatsappDataPrevista, setWhatsappDataPrevista] = useState("");
   const [whatsappNomeConversou, setWhatsappNomeConversou] = useState("");
   const [whatsappCargoConversou, setWhatsappCargoConversou] = useState("");
+  const [whatsappDataContato, setWhatsappDataContato] = useState("");
   const [whatsappSalvando, setWhatsappSalvando] = useState(false);
   const [whatsappSucesso, setWhatsappSucesso] = useState<string | null>(null);
 
@@ -1096,6 +1098,10 @@ export default function DashboardPage() {
     const clientes = getCobrancaClientesContext();
     if (clientes.length === 0) return;
     if (ligacaoFoiAtendido === null) return;
+    if (!ligacaoDataContato) {
+      alert("Informe a data do contato da ligação.");
+      return;
+    }
     setLigacaoSalvando(true);
     setLigacaoSucesso(null);
     try {
@@ -1110,6 +1116,7 @@ export default function DashboardPage() {
         empresas_internas_nomes: empresasInternasNomesStr || null,
         grupo_id: grupoId || null,
         empresa_id: empresaSelecionada?.id || null,
+        data_contato: ligacaoDataContato,
         foi_atendido: ligacaoFoiAtendido,
         nome_pessoa: ligacaoFoiAtendido ? (ligacaoNomePessoa.trim() || null) : null,
         cargo_pessoa: ligacaoFoiAtendido ? (ligacaoCargoPessoa.trim() || null) : null,
@@ -1136,6 +1143,10 @@ export default function DashboardPage() {
   async function salvarWhatsapp() {
     const clientes = getCobrancaClientesContext();
     if (clientes.length === 0) return;
+    if (!whatsappDataContato) {
+      alert("Informe a data do contato do WhatsApp.");
+      return;
+    }
     setWhatsappSalvando(true);
     setWhatsappSucesso(null);
     try {
@@ -1150,6 +1161,7 @@ export default function DashboardPage() {
         empresas_internas_nomes: empresasInternasNomesStr || null,
         grupo_id: grupoId || null,
         empresa_id: empresaSelecionada?.id || null,
+        data_contato: whatsappDataContato,
         mensagem_whatsapp_enviada: whatsappMensagemEnviada.trim() || null,
         observacao: whatsappObservacao.trim() || null,
         houve_negociacao: whatsappHouveNegociacao,
@@ -2027,6 +2039,17 @@ export default function DashboardPage() {
                   </div>
                   <div className="overflow-auto p-4 space-y-4">
                     <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                        Data do contato <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="date"
+                        value={ligacaoDataContato}
+                        onChange={(e) => setLigacaoDataContato(e.target.value)}
+                        className="w-full px-3 py-2 border rounded"
+                      />
+                    </div>
+                    <div>
                       <label className="block text-sm font-medium text-slate-700 mb-1">Foi atendido?</label>
                       <div className="flex gap-4">
                         <label className="inline-flex items-center gap-2 cursor-pointer">
@@ -2133,6 +2156,17 @@ export default function DashboardPage() {
                     <button type="button" onClick={() => setWhatsappPopupAberto(false)} className="text-slate-500 hover:text-slate-700 text-2xl leading-none">×</button>
                   </div>
                   <div className="overflow-auto p-4 space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                        Data do contato <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="date"
+                        value={whatsappDataContato}
+                        onChange={(e) => setWhatsappDataContato(e.target.value)}
+                        className="w-full px-3 py-2 border rounded"
+                      />
+                    </div>
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-1">Mensagem do WhatsApp</label>
                       <p className="text-slate-500 text-xs mb-1">Informe que a mensagem foi enviada</p>
