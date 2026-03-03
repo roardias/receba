@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/scheduler/run?secret=receba-cron-1a2b3c4d9f87",
-      "schedule": "10 20 * * *"
+      "schedule": "40 20 * * *"
     }
   ]
 }
