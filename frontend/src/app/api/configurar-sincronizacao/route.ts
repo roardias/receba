@@ -34,11 +34,13 @@ export async function GET(request: NextRequest) {
   if (!serviceRoleKey) return NextResponse.json({ error: "SUPABASE_SERVICE_ROLE_KEY não configurada" }, { status: 500 });
 
   const baseUrl = (url || "").replace(/\/$/, "");
-  const fnUrl = `${baseUrl}/functions/v1/receba-sync-scheduler`;
+  // Cache-busting: evita que CDN/navegador devolva resposta antiga da Edge Function
+  const fnUrl = `${baseUrl}/functions/v1/receba-sync-scheduler?_t=${Date.now()}`;
 
   try {
     const res = await fetch(fnUrl, {
       method: "GET",
+      cache: "no-store",
       headers: {
         Authorization: `Bearer ${serviceRoleKey}`,
         "Content-Type": "application/json",

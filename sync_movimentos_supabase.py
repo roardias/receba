@@ -93,8 +93,72 @@ def registrar_log(supabase, empresa_nome: str, status: str, registros: int = 0, 
     }).execute()
 
 
+def limpar_movimentos_empresa(supabase, empresa_nome: str) -> int:
+    """
+    Remove TODOS os movimentos da empresa na tabela movimentos.
+    A API Omie retorna apenas títulos em aberto, então após cada sync
+    a tabela deve refletir exatamente o que o Omie retornou.
+    """
+    # Contamos ANTES quantos registros existem para essa empresa,
+    # e usamos esse número como "removidos".
+    before_count = 0
+    try:
+        before = (
+            supabase.table("movimentos")
+            .select("det_ncodtitulo", count="exact")
+            .eq("empresa", empresa_nome)
+            .execute()
+        )
+        before_count = before.count or 0
+    except Exception as e:
+        print(f"[sync_movimentos] ERRO ao contar movimentos antes do delete para empresa='{empresa_nome}': {e}", flush=True)
+
+    # Delete de todos os registros da empresa (pode falhar silenciosamente se o filtro não casar)
+    try:
+        supabase.table("movimentos").delete().eq("empresa", empresa_nome).execute()
+    except Exception as e:
+        print(f"[sync_movimentos] ERRO no DELETE de movimentos para empresa='{empresa_nome}': {e}", flush=True)
+
+    # Contagem após o delete para confirmar se zerou
+    after_count = -1
+    try:
+        after = (
+            supabase.table("movimentos")
+            .select("det_ncodtitulo", count="exact")
+            .eq("empresa", empresa_nome)
+            .execute()
+        )
+        after_count = after.count or 0
+    except Exception as e:
+        print(f"[sync_movimentos] ERRO ao contar movimentos depois do delete para empresa='{empresa_nome}': {e}", flush=True)
+
+    print(
+        f"[sync_movimentos] DELETE movimentos empresa='{empresa_nome}' antes={before_count} depois={after_count}",
+        flush=True,
+    )
+    return before_count
+
+
+def insert_batch(supabase, movimentos: list[dict]) -> int:
+    total = 0
+    for i in range(0, len(movimentos), BATCH_SIZE):
+        batch = [
+            {k: v for k, v in m.items() if k in COLUNAS_TABELA}
+            for m in movimentos[i : i + BATCH_SIZE]
+        ]
+        if not batch:
+            continue
+        supabase.table("movimentos").insert(batch).execute()
+        total += len(batch)
+    return total
+
+
 def executar_sync_movimentos_empresas(supabase, empresas: list[dict], label: str = "") -> int:
-    """Executa sync de movimentos para lista de empresas (usado pelo scheduler)."""
+    """
+    Executa sync de movimentos para lista de empresas (usado pelo scheduler).
+    Regra: para cada empresa, APAGA todos os movimentos existentes e insere
+    apenas os retornados pela API Omie (títulos em aberto).
+    """
     from scheduler_status import limpar_em_execucao, registrar_em_execucao
 
     total = 0
@@ -108,31 +172,21 @@ def executar_sync_movimentos_empresas(supabase, empresas: list[dict], label: str
         try:
             registros_raw, _ = listar_movimentos_paginado(app_key, app_secret, nome)
             movimentos = [transformar_movimento_para_tabela(r) for r in registros_raw]
+            # Sempre limpar antes de inserir os novos (mesmo que a lista venha vazia)
+            removidos = limpar_movimentos_empresa(supabase, nome)
             if not movimentos:
-                print("0", flush=True)
+                print(f"0 (removidos {removidos})", flush=True)
                 registrar_log(supabase, nome, "sucesso", 0)
                 continue
-            n = upsert_batch(supabase, movimentos)
+            n = insert_batch(supabase, movimentos)
             registrar_log(supabase, nome, "sucesso", n)
             total += n
-            print(n, flush=True)
+            print(f"{n} (removidos {removidos})", flush=True)
         except Exception as e:
             print(f"ERRO: {e}", flush=True)
             registrar_log(supabase, nome, "erro", 0, str(e))
         finally:
             limpar_em_execucao(supabase)
-    return total
-
-
-def upsert_batch(supabase, movimentos: list[dict]) -> int:
-    total = 0
-    for i in range(0, len(movimentos), BATCH_SIZE):
-        batch = [
-            {k: v for k, v in m.items() if k in COLUNAS_TABELA}
-            for m in movimentos[i : i + BATCH_SIZE]
-        ]
-        supabase.table("movimentos").upsert(batch, on_conflict=CONFLICT_COLUMNS).execute()
-        total += len(batch)
     return total
 
 
@@ -168,15 +222,16 @@ def main():
             registros_raw, _ = listar_movimentos_paginado(app_key, app_secret, empresa_nome)
             movimentos = [transformar_movimento_para_tabela(r) for r in registros_raw]
 
+            removidos = limpar_movimentos_empresa(supabase, empresa_nome)
             if not movimentos:
-                print("(0 movimentos)")
+                print(f"(0 movimentos, removidos {removidos})")
                 registrar_log(supabase, empresa_nome, "sucesso", 0)
                 continue
 
-            n = upsert_batch(supabase, movimentos)
+            n = insert_batch(supabase, movimentos)
             total_geral += n
             registrar_log(supabase, empresa_nome, "sucesso", n)
-            print(f"- {n} upsertados")
+            print(f"- {n} inseridos (removidos {removidos})")
         except Exception as e:
             msg = str(e)
             registrar_log(supabase, empresa_nome, "erro", 0, msg)

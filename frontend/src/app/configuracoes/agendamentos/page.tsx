@@ -182,6 +182,7 @@ export default function AgendamentosPage() {
     }
 
     limparForm();
+    await configurarSincronizacao();
     carregar();
   }
 
@@ -200,6 +201,7 @@ export default function AgendamentosPage() {
   async function excluir(id: string) {
     if (!confirm("Excluir este agendamento?")) return;
     await supabase.from("api_agendamento").delete().eq("id", id);
+    await configurarSincronizacao();
     carregar();
   }
 
