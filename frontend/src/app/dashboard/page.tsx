@@ -1333,6 +1333,12 @@ export default function DashboardPage() {
                   </dd>
                 </div>
               ))}
+              <div className="flex items-center justify-between border-t border-slate-200 pt-2 mt-2">
+                <dt className="font-semibold text-slate-800">Total</dt>
+                <dd className="font-semibold text-slate-900">
+                  {formatarMoeda(resumoPorStatus.reduce((s, i) => s + i.total, 0))}
+                </dd>
+              </div>
             </dl>
           </div>
         </div>
@@ -2202,7 +2208,20 @@ export default function DashboardPage() {
                     </div>
                     {ligacaoSucesso && <p className="text-green-700 bg-green-50 px-3 py-2 rounded text-sm">{ligacaoSucesso}</p>}
                     <div className="flex gap-2">
-                      <button type="button" onClick={salvarLigacao} disabled={ligacaoFoiAtendido === null || ligacaoSalvando} className="px-4 py-2 bg-emerald-700 text-white rounded hover:bg-emerald-600 disabled:opacity-50">
+                      <button
+                        type="button"
+                        onClick={salvarLigacao}
+                        disabled={
+                          ligacaoFoiAtendido === null ||
+                          ligacaoSalvando ||
+                          !ligacaoDataContato ||
+                          !ligacaoTelefoneTipo ||
+                          !ligacaoTelefone.trim() ||
+                          (ligacaoTelefoneTipo === "celular" && soNumerosTelefone(ligacaoTelefone).length !== 11) ||
+                          (ligacaoTelefoneTipo === "fixo" && soNumerosTelefone(ligacaoTelefone).length !== 10)
+                        }
+                        className="px-4 py-2 bg-emerald-700 text-white rounded hover:bg-emerald-600 disabled:opacity-50"
+                      >
                         {ligacaoSalvando ? "Salvando..." : "Salvar"}
                       </button>
                       <button type="button" onClick={() => setLigacaoPopupAberto(false)} className="px-4 py-2 border rounded hover:bg-slate-100">Fechar</button>
@@ -2307,7 +2326,19 @@ export default function DashboardPage() {
                     )}
                     {whatsappSucesso && <p className="text-green-700 bg-green-50 px-3 py-2 rounded text-sm">{whatsappSucesso}</p>}
                     <div className="flex gap-2">
-                      <button type="button" onClick={salvarWhatsapp} disabled={whatsappSalvando} className="px-4 py-2 bg-green-700 text-white rounded hover:bg-green-600 disabled:opacity-50">
+                      <button
+                        type="button"
+                        onClick={salvarWhatsapp}
+                        disabled={
+                          whatsappSalvando ||
+                          !whatsappDataContato ||
+                          !whatsappTelefoneTipo ||
+                          !whatsappTelefone.trim() ||
+                          (whatsappTelefoneTipo === "celular" && soNumerosTelefone(whatsappTelefone).length !== 11) ||
+                          (whatsappTelefoneTipo === "fixo" && soNumerosTelefone(whatsappTelefone).length !== 10)
+                        }
+                        className="px-4 py-2 bg-green-700 text-white rounded hover:bg-green-600 disabled:opacity-50"
+                      >
                         {whatsappSalvando ? "Salvando..." : "Salvar"}
                       </button>
                       <button type="button" onClick={() => setWhatsappPopupAberto(false)} className="px-4 py-2 border rounded hover:bg-slate-100">Fechar</button>

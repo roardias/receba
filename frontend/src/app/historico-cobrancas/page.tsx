@@ -12,6 +12,8 @@ type Cobranca = {
   created_at: string;
   data_contato: string | null;
   tipo: "email" | "ligacao" | "whatsapp";
+  telefone_contato: string | null;
+  telefone_tipo: string | null;
   cliente_nome: string | null;
   grupo_nome: string | null;
   empresas_internas_nomes: string | null;
@@ -48,6 +50,15 @@ function formaContato(tipo: string): string {
   }
 }
 
+/** Formata telefone só dígitos: 11 → (XX) 9 XXXX-XXXX, 10 → (XX) XXXX-XXXX */
+function formataTelefone(num: string | null): string {
+  if (!num || !/^\d+$/.test(num)) return "—";
+  const d = num.replace(/\D/g, "");
+  if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 3)} ${d.slice(3, 7)}-${d.slice(7)}`;
+  if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+  return num;
+}
+
 export default function HistoricoCobrancasPage() {
   const { hasPermissao } = useAuth();
   const [grupos, setGrupos] = useState<Grupo[]>([]);
@@ -65,6 +76,8 @@ export default function HistoricoCobrancasPage() {
   const [editingObsId, setEditingObsId] = useState<string | null>(null);
   const [editingObsValue, setEditingObsValue] = useState("");
   const [editingDataContato, setEditingDataContato] = useState("");
+  const [editingTelefone, setEditingTelefone] = useState("");
+  const [editingTelefoneTipo, setEditingTelefoneTipo] = useState<"celular" | "fixo" | null>(null);
   const [savingObsId, setSavingObsId] = useState<string | null>(null);
 
   const hojeStr = new Date().toISOString().slice(0, 10);
@@ -116,7 +129,7 @@ export default function HistoricoCobrancasPage() {
     // 1) Cobranças com grupo_id preenchido (após migration de relacionamentos)
     let q = supabase
       .from("cobrancas_realizadas")
-      .select("id, created_at, data_contato, tipo, cliente_nome, grupo_nome, empresas_internas_nomes, observacao, cod_cliente, cnpj_cpf, grupo_id, empresa_id")
+      .select("id, created_at, data_contato, tipo, telefone_contato, telefone_tipo, cliente_nome, grupo_nome, empresas_internas_nomes, observacao, cod_cliente, cnpj_cpf, grupo_id, empresa_id")
       .eq("grupo_id", grupoId)
       .order("data_contato", { ascending: false, nullsFirst: false });
 
@@ -138,7 +151,7 @@ export default function HistoricoCobrancasPage() {
       if (list.length === 0) {
         let qFallback = supabase
           .from("cobrancas_realizadas")
-          .select("id, created_at, data_contato, tipo, cliente_nome, grupo_nome, empresas_internas_nomes, observacao, cod_cliente, cnpj_cpf, grupo_id, empresa_id")
+          .select("id, created_at, data_contato, tipo, telefone_contato, telefone_tipo, cliente_nome, grupo_nome, empresas_internas_nomes, observacao, cod_cliente, cnpj_cpf, grupo_id, empresa_id")
           .is("grupo_id", null)
           .ilike("grupo_nome", grupoSelecionado.nome)
           .order("data_contato", { ascending: false, nullsFirst: false });
@@ -203,17 +216,40 @@ export default function HistoricoCobrancasPage() {
     setEmpresaId("");
   }
 
-  async function salvarObs(id: string, valor: string, dataContato: string) {
+  function validaTelefoneEdicao(telefone: string, tipo: "celular" | "fixo" | null): { ok: boolean; msg?: string; valor?: string | null } {
+    const nums = soNumeros(telefone);
+    if (!nums) return { ok: true, valor: null };
+    if (!tipo) return { ok: false, msg: "Para preencher telefone, informe se é celular ou fixo." };
+    if (tipo === "celular" && nums.length !== 11) return { ok: false, msg: "Celular deve ter 11 dígitos." };
+    if (tipo === "fixo" && nums.length !== 10) return { ok: false, msg: "Fixo deve ter 10 dígitos." };
+    return { ok: true, valor: nums };
+  }
+
+  async function salvarObs(
+    id: string,
+    valor: string,
+    dataContato: string,
+    telefone: string,
+    telefoneTipo: "celular" | "fixo" | null
+  ) {
     if (dataContato && dataContato > hojeStr) {
       alert("A data de contato não pode ser futura.");
       return;
     }
+    const tel = validaTelefoneEdicao(telefone, telefoneTipo);
+    if (!tel.ok) {
+      alert(tel.msg);
+      return;
+    }
     setSavingObsId(id);
     const dataContatoVal = dataContato.trim() || null;
-    const { error } = await supabase
-      .from("cobrancas_realizadas")
-      .update({ observacao: valor.trim() || null, data_contato: dataContatoVal })
-      .eq("id", id);
+    const payload: { observacao: string | null; data_contato: string | null; telefone_contato: string | null; telefone_tipo: string | null } = {
+      observacao: valor.trim() || null,
+      data_contato: dataContatoVal,
+      telefone_contato: tel.valor ?? null,
+      telefone_tipo: tel.valor ? telefoneTipo : null,
+    };
+    const { error } = await supabase.from("cobrancas_realizadas").update(payload).eq("id", id);
     setSavingObsId(null);
     setEditingObsId(null);
     if (error) {
@@ -222,7 +258,11 @@ export default function HistoricoCobrancasPage() {
       return;
     }
     setCobrancas((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, observacao: valor.trim() || null, data_contato: dataContatoVal } : c))
+      prev.map((c) =>
+        c.id === id
+          ? { ...c, observacao: valor.trim() || null, data_contato: dataContatoVal, telefone_contato: payload.telefone_contato, telefone_tipo: payload.telefone_tipo }
+          : c
+      )
     );
   }
 
@@ -230,6 +270,8 @@ export default function HistoricoCobrancasPage() {
     setEditingObsId(c.id);
     setEditingObsValue(c.observacao ?? "");
     setEditingDataContato(c.data_contato || c.created_at.slice(0, 10));
+    setEditingTelefone(c.telefone_contato ?? "");
+    setEditingTelefoneTipo((c.telefone_tipo === "celular" || c.telefone_tipo === "fixo" ? c.telefone_tipo : null) as "celular" | "fixo" | null);
   }
 
   if (!hasPermissao("menu_historico_cobrancas")) {
@@ -339,6 +381,7 @@ export default function HistoricoCobrancasPage() {
                         <tr>
                           <th className="text-left p-2">Forma de contato</th>
                           <th className="text-left p-2">Data</th>
+                          <th className="text-left p-2">Telefone</th>
                           <th className="text-left p-2">Obs.</th>
                         </tr>
                       </thead>
@@ -359,6 +402,33 @@ export default function HistoricoCobrancasPage() {
                                 formataData(c.data_contato || c.created_at)
                               )}
                             </td>
+                            <td className="p-2 text-slate-600 whitespace-nowrap">
+                              {podeEditarObs && editingObsId === c.id ? (
+                                <div className="flex flex-col gap-1">
+                                  <div className="flex gap-2">
+                                    <label className="inline-flex items-center gap-1 text-xs">
+                                      <input type="radio" name={`tipoTel-${c.id}`} checked={editingTelefoneTipo === "celular"} onChange={() => setEditingTelefoneTipo("celular")} className="rounded" />
+                                      Celular
+                                    </label>
+                                    <label className="inline-flex items-center gap-1 text-xs">
+                                      <input type="radio" name={`tipoTel-${c.id}`} checked={editingTelefoneTipo === "fixo"} onChange={() => setEditingTelefoneTipo("fixo")} className="rounded" />
+                                      Fixo
+                                    </label>
+                                  </div>
+                                  <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    value={editingTelefone}
+                                    onChange={(e) => setEditingTelefone(soNumeros(e.target.value))}
+                                    placeholder="61999999999"
+                                    maxLength={11}
+                                    className="p-1 border rounded text-sm w-28"
+                                  />
+                                </div>
+                              ) : (
+                                formataTelefone(c.telefone_contato)
+                              )}
+                            </td>
                             <td className="p-2 max-w-md align-top">
                               {podeEditarObs && editingObsId === c.id ? (
                                 <div className="flex flex-col gap-1">
@@ -377,7 +447,7 @@ export default function HistoricoCobrancasPage() {
                                   <div className="flex gap-2">
                                     <button
                                       type="button"
-                                      onClick={() => salvarObs(c.id, editingObsValue, editingDataContato)}
+                                      onClick={() => salvarObs(c.id, editingObsValue, editingDataContato, editingTelefone, editingTelefoneTipo)}
                                       disabled={savingObsId === c.id}
                                       className="px-2 py-1 bg-slate-700 text-white text-xs rounded hover:bg-slate-600 disabled:opacity-50"
                                     >
