@@ -278,10 +278,23 @@ export default function AgendamentosPage() {
         return;
       }
       const jobs = data?.jobs_criados ?? data?.jobsCriados;
-      const msg = typeof jobs === "number"
-        ? `Sincronização configurada. ${jobs} job(s) agendado(s) no Supabase.`
-        : "Sincronização configurada no Supabase.";
-      setSyncResult({ ok: true, message: msg, detail: data });
+      const primeiroErro = data?.primeiro_erro as string | undefined;
+      const erros = data?.erros as string[] | undefined;
+      let msg: string;
+      if (typeof jobs === "number") {
+        msg = jobs > 0
+          ? `Sincronização configurada. ${jobs} job(s) agendado(s) no Supabase.`
+          : (primeiroErro
+            ? `Nenhum job criado. Erro: ${primeiroErro}`
+            : "Sincronização configurada. 0 job(s) agendado(s) no Supabase.");
+      } else {
+        msg = "Sincronização configurada no Supabase.";
+      }
+      setSyncResult({
+        ok: primeiroErro && jobs === 0 ? false : true,
+        message: msg,
+        detail: erros?.length ? { erros } : data,
+      });
     } catch (e) {
       setSyncResult({
         ok: false,
