@@ -509,7 +509,7 @@ export default function DashboardPage() {
     }
     let q = supabase
       .from("cobrancas_realizadas")
-      .select("cod_cliente, cnpj_cpf, created_at")
+      .select("cod_cliente, cnpj_cpf, data_contato, created_at")
       .eq("grupo_id", grupoId);
     if (empresaSelecionada) {
       q = q.eq("empresa_id", empresaSelecionada.id);
@@ -520,10 +520,12 @@ export default function DashboardPage() {
         return;
       }
       const map: Record<string, string> = {};
-      (data || []).forEach((r: { cod_cliente: string | null; cnpj_cpf: string | null; created_at: string }) => {
+      (data || []).forEach((r: { cod_cliente: string | null; cnpj_cpf: string | null; data_contato: string | null; created_at: string }) => {
         const key = chaveContato(r.cod_cliente, r.cnpj_cpf);
+        const dataRef = r.data_contato || (r.created_at ? r.created_at.slice(0, 10) : null);
+        if (!dataRef) return;
         const prev = map[key];
-        if (!prev || r.created_at > prev) map[key] = r.created_at;
+        if (!prev || dataRef > prev) map[key] = dataRef;
       });
       setUltimoContatoPorChave(map);
     });
