@@ -181,8 +181,9 @@ export default function AgendamentosPage() {
       return;
     }
 
+    // Agora a sincronização automática é feita via VPS chamando /api/scheduler/run;
+    // não precisamos mais recriar jobs no pg_cron via configurarSincronizacao.
     limparForm();
-    await configurarSincronizacao();
     carregar();
   }
 
@@ -201,7 +202,6 @@ export default function AgendamentosPage() {
   async function excluir(id: string) {
     if (!confirm("Excluir este agendamento?")) return;
     await supabase.from("api_agendamento").delete().eq("id", id);
-    await configurarSincronizacao();
     carregar();
   }
 
@@ -487,28 +487,12 @@ export default function AgendamentosPage() {
 
       {podeEditar && (
         <div className="mt-8 p-4 border rounded-lg bg-slate-50 max-w-xl">
-          <h2 className="text-lg font-semibold text-slate-800 mb-2">Sincronização automática (Supabase)</h2>
-          <p className="text-sm text-slate-600 mb-3">
-            Após salvar os agendamentos acima, clique aqui para aplicar no Supabase. Os jobs serão criados e a API de clientes rodará nos dias e horários configurados.
+          <h2 className="text-lg font-semibold text-slate-800 mb-2">Sincronização automática</h2>
+          <p className="text-sm text-slate-600">
+            Os agendamentos acima são lidos diretamente pelo scheduler HTTP
+            (rodando na VPS) a cada minuto. Não é mais necessário aplicar nada
+            no Supabase ou criar jobs no pg_cron.
           </p>
-          <button
-            type="button"
-            onClick={configurarSincronizacao}
-            disabled={syncLoading}
-            className="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 disabled:opacity-50"
-          >
-            {syncLoading ? "Configurando…" : "Configurar sincronização (Supabase)"}
-          </button>
-          {syncResult && (
-            <div className={`mt-3 text-sm ${syncResult.ok ? "text-green-700" : "text-red-700"}`}>
-              {syncResult.message}
-              {!syncResult.ok && syncResult.detail != null && (
-                <pre className="mt-1 text-xs text-slate-600 overflow-auto max-h-24">
-                  {typeof syncResult.detail === "object" ? JSON.stringify(syncResult.detail, null, 2) : String(syncResult.detail)}
-                </pre>
-              )}
-            </div>
-          )}
         </div>
       )}
 

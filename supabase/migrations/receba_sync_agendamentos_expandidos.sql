@@ -27,7 +27,6 @@ AS $$
       a.grupo_ids
     FROM api_agendamento a
     WHERE a.ativo = true
-      AND ('clientes' = ANY(COALESCE(a.api_tipos, ARRAY['clientes'])))
       AND (
         (a.empresa_ids IS NOT NULL AND array_length(a.empresa_ids, 1) > 0)
         OR (a.grupo_ids IS NOT NULL AND array_length(a.grupo_ids, 1) > 0)

@@ -77,16 +77,50 @@ export async function GET(req: NextRequest) {
 
     type Row = {
       empresa_id: string;
-      dias_semana: number[];
-      horarios: string[];
-      api_tipos: string[];
+      dias_semana: unknown;
+      horarios: unknown;
+      api_tipos: unknown;
       timezone: string;
     };
 
     const alvos: Row[] = (rows as Row[]).filter((r) => {
-      const dias = Array.isArray(r.dias_semana) ? r.dias_semana : [];
-      const horarios = Array.isArray(r.horarios) ? r.horarios : [];
-      const apis = Array.isArray(r.api_tipos) ? r.api_tipos : [];
+      // dias_semana pode vir como number[] ou string[]; normalizar para number[]
+      const rawDias = r.dias_semana;
+      const dias: number[] = Array.isArray(rawDias)
+        ? rawDias
+            .map((d: any) => Number(d))
+            .filter((d) => Number.isInteger(d))
+        : [];
+
+      // horarios pode vir como text[] ou string único; normalizar para ["HH:MM"]
+      const rawHorarios = r.horarios;
+      const listaHorarios: string[] = Array.isArray(rawHorarios)
+        ? (rawHorarios as any[]).map((h) => String(h ?? ""))
+        : typeof rawHorarios === "string"
+        ? [rawHorarios]
+        : [];
+      const horarios = listaHorarios
+        .map((h) => (h || "").trim())
+        .map((h) => (h.length >= 5 ? h.slice(0, 5) : h)); // corta segundos se vier 09:48:00
+
+      // api_tipos pode vir como text[] ou string/json; normalizar para string[]
+      const rawApis = r.api_tipos;
+      let apis: string[] = [];
+      if (Array.isArray(rawApis)) {
+        apis = (rawApis as any[]).map((x) => String(x));
+      } else if (typeof rawApis === "string") {
+        try {
+          const parsed = JSON.parse(rawApis);
+          if (Array.isArray(parsed)) {
+            apis = parsed.map((x: any) => String(x));
+          } else {
+            apis = [rawApis];
+          }
+        } catch {
+          apis = [rawApis];
+        }
+      }
+
       const temMov = apis.includes("movimento_financeiro");
       const diaConf = dias.includes(diaSemana);
       const horaConf = horarios.includes(horario);
