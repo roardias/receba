@@ -20,11 +20,7 @@ function getNowInSaoPaulo() {
   const minute = parts.find((p) => p.type === "minute")?.value ?? "00";
   const weekdayRaw = (parts.find((p) => p.type === "weekday")?.value ?? "").toLowerCase();
 
-  // Normalizar para lidar com formatos tipo "segunda-feira", "seg.", "seg"
-  const weekdayNorm = weekdayRaw
-    .replace("-feira", "")
-    .replace(".", "")
-    .trim();
+  const weekdayNorm = weekdayRaw.replace("-feira", "").replace(".", "").trim();
 
   let diaSemana = 1;
   if (weekdayNorm.startsWith("seg")) diaSemana = 1;
@@ -60,153 +56,103 @@ export async function GET(req: NextRequest) {
     const { diaSemana, horario } = getNowInSaoPaulo();
     const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
-    const { data: rows, error: errRpc } = await supabase.rpc(
-      "receba_sync_agendamentos_expandidos",
-    );
+    // 1) Ler DIRETO da tabela api_agendamento
+    const { data: ags, error: errAg } = await supabase
+      .from("api_agendamento")
+      .select("id, api_tipos, dias_semana, horarios, empresa_ids, ativo, timezone")
+      .eq("ativo", true);
 
-    if (errRpc) {
+    if (errAg) {
       return NextResponse.json(
-        { error: "receba_sync_agendamentos_expandidos", detail: errRpc.message },
+        { ok: false, error: "Erro ao ler api_agendamento", detail: errAg.message },
         { status: 500 },
       );
     }
 
-    if (!rows || !rows.length) {
-      return NextResponse.json({ ok: true, message: "Nenhum agendamento ativo", diaSemana, horario });
-    }
-
-    type Row = {
-      empresa_id: string;
+    type Ag = {
+      id: string;
+      api_tipos: unknown;
       dias_semana: unknown;
       horarios: unknown;
-      api_tipos: unknown;
-      timezone: string;
+      empresa_ids: string[] | null;
+      ativo: boolean;
+      timezone: string | null;
     };
 
-    const rowsArr = rows as Row[];
+    const lista = (ags || []) as Ag[];
 
-    const alvos: Row[] = rowsArr.filter((r) => {
-      // dias_semana pode vir como number[] ou string[]; normalizar para number[]
-      const rawDias = r.dias_semana;
-      const dias: number[] = Array.isArray(rawDias)
-        ? rawDias
-            .map((d: any) => Number(d))
-            .filter((d) => Number.isInteger(d))
-        : [];
+    // 2) Normalizar e filtrar só movimento_financeiro neste minuto
+    const alvos: { empresa_id: string; ag_id: string }[] = [];
 
-      // horarios pode vir como text[] ou string único; normalizar para ["HH:MM"]
-      const rawHorarios = r.horarios;
-      const listaHorarios: string[] = Array.isArray(rawHorarios)
-        ? (rawHorarios as any[]).map((h) => String(h ?? ""))
-        : typeof rawHorarios === "string"
-        ? [rawHorarios]
-        : [];
-      const horarios = listaHorarios
-        .map((h) => (h || "").trim())
-        .map((h) => (h.length >= 5 ? h.slice(0, 5) : h)); // corta segundos se vier 09:48:00
+    for (const ag of lista) {
+      if (!ag.empresa_ids || ag.empresa_ids.length === 0) continue;
 
-      // api_tipos pode vir como text[] ou string/json; normalizar para string[]
-      const rawApis = r.api_tipos;
+      // api_tipos -> string[]
       let apis: string[] = [];
-      if (Array.isArray(rawApis)) {
-        apis = (rawApis as any[]).map((x) => String(x));
-      } else if (typeof rawApis === "string") {
+      if (Array.isArray(ag.api_tipos)) {
+        apis = (ag.api_tipos as any[]).map((x) => String(x));
+      } else if (typeof ag.api_tipos === "string") {
         try {
-          const parsed = JSON.parse(rawApis);
+          const parsed = JSON.parse(ag.api_tipos);
           if (Array.isArray(parsed)) {
             apis = parsed.map((x: any) => String(x));
           } else {
-            apis = [rawApis];
+            apis = [ag.api_tipos];
           }
         } catch {
-          apis = [rawApis];
+          apis = [ag.api_tipos];
         }
       }
+      if (!apis.includes("movimento_financeiro")) continue;
 
-      const temMov = apis.includes("movimento_financeiro");
-      const diaConf = dias.includes(diaSemana);
-      const horaConf = horarios.includes(horario);
-      return temMov && diaConf && horaConf;
-    });
+      // dias_semana -> number[]
+      const rawDias = ag.dias_semana;
+      const dias: number[] = Array.isArray(rawDias)
+        ? rawDias.map((d: any) => Number(d)).filter((d) => Number.isInteger(d))
+        : [];
+      if (!dias.includes(diaSemana)) continue;
+
+      // horarios -> ["HH:MM"]
+      const rawHor = ag.horarios;
+      const listaHorarios: string[] = Array.isArray(rawHor)
+        ? (rawHor as any[]).map((h) => String(h ?? ""))
+        : typeof rawHor === "string"
+        ? [rawHor]
+        : [];
+      const horariosNorm = listaHorarios
+        .map((h) => (h || "").trim())
+        .map((h) => (h.length >= 5 ? h.slice(0, 5) : h)); // corta segundos
+      if (!horariosNorm.includes(horario)) continue;
+
+      // Para este agendamento, todas as empresas marcadas
+      for (const empId of ag.empresa_ids) {
+        alvos.push({ empresa_id: empId, ag_id: ag.id });
+      }
+    }
 
     if (!alvos.length) {
-      // Resposta detalhada para depuração quando não há alvos;
-      // protegida pelo CRON_SECRET.
-      const debug = (() => {
-        try {
-          // Quantos rows têm movimento_financeiro em api_tipos
-          const comMov = rowsArr.filter((r) => {
-            const rawApis = r.api_tipos;
-            let apis: string[] = [];
-            if (Array.isArray(rawApis)) {
-              apis = (rawApis as any[]).map((x) => String(x));
-            } else if (typeof rawApis === "string") {
-              try {
-                const parsed = JSON.parse(rawApis);
-                if (Array.isArray(parsed)) {
-                  apis = parsed.map((x: any) => String(x));
-                } else {
-                  apis = [rawApis];
-                }
-              } catch {
-                apis = [rawApis];
-              }
-            }
-            return apis.includes("movimento_financeiro");
-          });
-
-          // Desses, quantos batem o dia da semana
-          const comMovEDia = comMov.filter((r) => {
-            const rawDias = r.dias_semana;
-            const dias: number[] = Array.isArray(rawDias)
-              ? rawDias.map((d: any) => Number(d)).filter((d) => Number.isInteger(d))
-              : [];
-            return dias.includes(diaSemana);
-          });
-
-          // Desses, quais horários estão cadastrados
-          const horariosPorEmpresa = comMovEDia.map((r) => {
-            const rawHorarios = r.horarios;
-            const listaHorarios: string[] = Array.isArray(rawHorarios)
-              ? (rawHorarios as any[]).map((h) => String(h ?? ""))
-              : typeof rawHorarios === "string"
-              ? [rawHorarios]
-              : [];
-            const horarios = listaHorarios
-              .map((h) => (h || "").trim())
-              .map((h) => (h.length >= 5 ? h.slice(0, 5) : h));
-            return {
-              empresa_id: r.empresa_id,
-              horarios,
-            };
-          });
-
-          return {
-            total_rows: rowsArr.length,
-            com_movimento_financeiro: comMov.length,
-            com_movimento_e_dia: comMovEDia.length,
-            horarios_por_empresa: horariosPorEmpresa,
-          };
-        } catch {
-          return null;
-        }
-      })();
-
       return NextResponse.json(
         {
           ok: true,
           message: "Nenhum agendamento de movimento_financeiro para este minuto",
           diaSemana,
           horario,
-          debug,
+          debug: {
+            total_agendamentos: lista.length,
+            // só para debug, mostra o que há de movimento_financeiro hoje
+            exemplos: lista
+              .slice(0, 10)
+              .map((ag) => ({ id: ag.id, api_tipos: ag.api_tipos, dias_semana: ag.dias_semana, horarios: ag.horarios })),
+          },
         },
         { status: 200 },
       );
     }
 
+    // 3) Chamar a Edge por empresa
     const results = await Promise.allSettled(
-      alvos.map(async (row) => {
-        const url = `${EDGE_BASE_URL}?empresa_id=${encodeURIComponent(row.empresa_id)}`;
+      alvos.map(async ({ empresa_id }) => {
+        const url = `${EDGE_BASE_URL}?empresa_id=${encodeURIComponent(empresa_id)}`;
         const res = await fetch(url, {
           method: "GET",
           headers: {
@@ -221,7 +167,7 @@ export async function GET(req: NextRequest) {
         } catch {
           body = { raw: text };
         }
-        return { empresa_id: row.empresa_id, status: res.status, ok: res.ok, body };
+        return { empresa_id, status: res.status, ok: res.ok, body };
       }),
     );
 
@@ -229,7 +175,7 @@ export async function GET(req: NextRequest) {
       .filter((r) => r.status === "fulfilled" && (r as any).value.ok)
       .map((r: any) => r.value);
     const falhas = results
-      .filter((r) => r.status === "fulfilled" && !(r as any).value.ok || r.status === "rejected")
+      .filter((r) => (r.status === "fulfilled" && !(r as any).value.ok) || r.status === "rejected")
       .map((r: any) => (r.status === "fulfilled" ? r.value : { error: String(r.reason) }));
 
     return NextResponse.json(
@@ -248,4 +194,3 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
 }
-
