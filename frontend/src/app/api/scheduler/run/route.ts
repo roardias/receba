@@ -79,17 +79,31 @@ export async function GET(req: NextRequest) {
       dias_semana: unknown;
       horarios: unknown;
       empresa_ids: string[] | null;
+      grupo_ids: string[] | null;
       ativo: boolean;
       timezone: string | null;
     };
 
     const lista = (ags || []) as Ag[];
 
-    // 2) Normalizar e filtrar só movimento_financeiro neste minuto
+    // 2) Normalizar e filtrar agendamentos que batem neste minuto (qualquer api_tipo: clientes, categorias, movimento_financeiro, pagamentos_realizados, recebimentos_omie)
+    const TIPOS_SYNC = ["clientes", "categorias", "movimento_financeiro", "pagamentos_realizados", "recebimentos_omie"];
     const alvos: { empresa_id: string; ag_id: string }[] = [];
 
     for (const ag of lista) {
-      if (!ag.empresa_ids || ag.empresa_ids.length === 0) continue;
+      // Empresas alvo: diretas (empresa_ids) ou via grupo (grupo_ids → empresas ativas do grupo)
+      let empresaIds: string[] = [];
+      if (ag.empresa_ids && ag.empresa_ids.length > 0) {
+        empresaIds = ag.empresa_ids;
+      } else if (ag.grupo_ids && ag.grupo_ids.length > 0) {
+        const { data: empresas } = await supabase
+          .from("empresas")
+          .select("id")
+          .in("grupo_id", ag.grupo_ids)
+          .eq("ativo", true);
+        empresaIds = (empresas ?? []).map((e: { id: string }) => e.id);
+      }
+      if (empresaIds.length === 0) continue;
 
       // api_tipos -> string[]
       let apis: string[] = [];
@@ -107,7 +121,9 @@ export async function GET(req: NextRequest) {
           apis = [ag.api_tipos];
         }
       }
-      if (!apis.includes("movimento_financeiro")) continue;
+      // Disparar para qualquer agendamento que tenha pelo menos um tipo de sync e bata no minuto
+      const temAlgumTipo = apis.some((t) => TIPOS_SYNC.includes(t));
+      if (!temAlgumTipo) continue;
 
       // dias_semana -> number[]
       const rawDias = ag.dias_semana;
@@ -128,8 +144,8 @@ export async function GET(req: NextRequest) {
         .map((h) => (h.length >= 5 ? h.slice(0, 5) : h)); // corta segundos
       if (!horariosNorm.includes(horario)) continue;
 
-      // Para este agendamento, todas as empresas marcadas
-      for (const empId of ag.empresa_ids) {
+      // Para este agendamento, todas as empresas (diretas ou do grupo)
+      for (const empId of empresaIds) {
         alvos.push({ empresa_id: empId, ag_id: ag.id });
       }
     }
@@ -146,7 +162,14 @@ export async function GET(req: NextRequest) {
             // só para debug, mostra o que há de movimento_financeiro hoje
             exemplos: lista
               .slice(0, 10)
-              .map((ag) => ({ id: ag.id, api_tipos: ag.api_tipos, dias_semana: ag.dias_semana, horarios: ag.horarios })),
+              .map((ag) => ({
+                id: ag.id,
+                api_tipos: ag.api_tipos,
+                dias_semana: ag.dias_semana,
+                horarios: ag.horarios,
+                empresa_ids: ag.empresa_ids ?? [],
+                grupo_ids: ag.grupo_ids ?? [],
+              })),
           },
         },
         { status: 200, headers: { "Cache-Control": "no-store, max-age=0" } },
