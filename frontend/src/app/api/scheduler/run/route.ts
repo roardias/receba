@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
+// Sem cache: sempre ler dados frescos do Supabase (evita resposta com horário antigo)
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const EDGE_BASE_URL = `${SUPABASE_URL.replace(/\/$/, "")}/functions/v1/receba-sync-empresa`;
@@ -145,7 +149,7 @@ export async function GET(req: NextRequest) {
               .map((ag) => ({ id: ag.id, api_tipos: ag.api_tipos, dias_semana: ag.dias_semana, horarios: ag.horarios })),
           },
         },
-        { status: 200 },
+        { status: 200, headers: { "Cache-Control": "no-store, max-age=0" } },
       );
     }
 
@@ -187,7 +191,7 @@ export async function GET(req: NextRequest) {
         sucesso,
         falhas,
       },
-      { status: 200 },
+      { status: 200, headers: { "Cache-Control": "no-store, max-age=0" } },
     );
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
