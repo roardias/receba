@@ -88,7 +88,7 @@ Alldax • Grupo 3SA`;
 
 function formatarDadosComoTexto(rows: DashboardRow[], tipo: "cliente" | "grupo"): string {
   if (tipo === "cliente") {
-    const linhas = ["Emissão\tPrevisão\tDias\tNF\tCategoria\tVal. Pago\tVal. Aberto\tVal. Atualizado"];
+    const linhas = ["Emissão\tVencimento\tDias\tNF\tCategoria\tVal. Pago\tVal. Aberto\tVal. Atualizado"];
     for (const r of rows) {
       linhas.push(
         [formatarData(r.det_ddtemissao), formatarData(r.det_ddtprevisao), r.qtde_dias ?? "—", r.det_cnumdocfiscal ?? "—", r.categoria_descricao ?? "—", formatarMoeda(r.ValPago_validado), formatarMoeda(r.ValAberto_validado), formatarMoeda(valorAtualizado(r.ValAberto_validado, r.qtde_dias))].join("\t")
@@ -96,7 +96,7 @@ function formatarDadosComoTexto(rows: DashboardRow[], tipo: "cliente" | "grupo")
     }
     return linhas.join("\n");
   }
-  const linhas = ["Cód.\tCliente\tEmissão\tPrevisão\tDias\tNF\tCategoria\tVal. Pago\tVal. Aberto\tVal. Atualizado"];
+  const linhas = ["Cód.\tCliente\tEmissão\tVencimento\tDias\tNF\tCategoria\tVal. Pago\tVal. Aberto\tVal. Atualizado"];
   for (const r of rows) {
     linhas.push(
       [r.codigo_nome_fantasia ?? "—", r.nome_fantasia ?? "—", formatarData(r.det_ddtemissao), formatarData(r.det_ddtprevisao), r.qtde_dias ?? "—", r.det_cnumdocfiscal ?? "—", r.categoria_descricao ?? "—", formatarMoeda(r.ValPago_validado), formatarMoeda(r.ValAberto_validado), formatarMoeda(valorAtualizado(r.ValAberto_validado, r.qtde_dias))].join("\t")
@@ -164,7 +164,7 @@ function formatarDadosComoHtml(rows: DashboardRow[], tipo: "cliente" | "grupo"):
           )}</td><td style="text-align:right">${escapeHtml(formatarMoeda(r.ValAberto_validado))}</td><td style="text-align:right">${escapeHtml(formatarMoeda(valorAtualizado(r.ValAberto_validado, r.qtde_dias)))}</td></tr>`
       )
       .join("");
-    return `<table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse;width:100%;font-size:14px"><thead><tr style="background:#e2e8f0"><th>Emissão</th><th>Previsão</th><th>Dias</th><th>NF</th><th>Categoria</th><th style="text-align:right">Val. Pago</th><th style="text-align:right">Val. Aberto</th><th style="text-align:right">Val. Atualizado</th></tr></thead><tbody>${trs}</tbody></table>`;
+    return `<table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse;width:100%;font-size:14px"><thead><tr style="background:#e2e8f0"><th>Emissão</th><th>Vencimento</th><th>Dias</th><th>NF</th><th>Categoria</th><th style="text-align:right">Val. Pago</th><th style="text-align:right">Val. Aberto</th><th style="text-align:right">Val. Atualizado</th></tr></thead><tbody>${trs}</tbody></table>`;
   }
   let trs = rows
     .map(
@@ -180,7 +180,7 @@ function formatarDadosComoHtml(rows: DashboardRow[], tipo: "cliente" | "grupo"):
         )}</td><td style="text-align:right">${escapeHtml(formatarMoeda(r.ValAberto_validado))}</td><td style="text-align:right">${escapeHtml(formatarMoeda(valorAtualizado(r.ValAberto_validado, r.qtde_dias)))}</td></tr>`
     )
     .join("");
-  return `<table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse;width:100%;font-size:14px"><thead><tr style="background:#e2e8f0"><th>Cód.</th><th>Cliente</th><th>Emissão</th><th>Previsão</th><th>Dias</th><th>NF</th><th>Categoria</th><th style="text-align:right">Val. Pago</th><th style="text-align:right">Val. Aberto</th><th style="text-align:right">Val. Atualizado</th></tr></thead><tbody>${trs}</tbody></table>`;
+  return `<table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse;width:100%;font-size:14px"><thead><tr style="background:#e2e8f0"><th>Cód.</th><th>Cliente</th><th>Emissão</th><th>Vencimento</th><th>Dias</th><th>NF</th><th>Categoria</th><th style="text-align:right">Val. Pago</th><th style="text-align:right">Val. Aberto</th><th style="text-align:right">Val. Atualizado</th></tr></thead><tbody>${trs}</tbody></table>`;
 }
 
 function calcularTotaisPorCliente(rows: DashboardRow[]) {
@@ -274,7 +274,7 @@ function buildRelatorioHtml(
         )
         .join("");
 
-      const tabelaHtml = `<table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse;width:100%;font-size:14px"><thead><tr style="background:#e2e8f0"><th>Emissão</th><th>Previsão</th><th>Dias</th><th>NF</th><th>Categoria</th><th style="text-align:right">Val. Pago</th><th style="text-align:right">Val. Aberto</th><th style="text-align:right">Val. Atualizado</th></tr></thead><tbody>${trs}</tbody></table>`;
+      const tabelaHtml = `<table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse;width:100%;font-size:14px"><thead><tr style="background:#e2e8f0"><th>Emissão</th><th>Vencimento</th><th>Dias</th><th>NF</th><th>Categoria</th><th style="text-align:right">Val. Pago</th><th style="text-align:right">Val. Aberto</th><th style="text-align:right">Val. Atualizado</th></tr></thead><tbody>${trs}</tbody></table>`;
 
       return `<div style="margin-bottom:24px;page-break-inside:avoid;break-inside:avoid"><h3 style="margin:0 0 8px 0;font-size:15px;color:#1e293b">${escapeHtml(label)}</h3>${tabelaHtml}</div>`;
     }).join("");
@@ -690,7 +690,7 @@ export default function DashboardPage() {
       "Cód.",
       "CNPJ/CPF",
       "Nota fiscal",
-      "Data previsão",
+      "Data de vencimento",
       "Status",
       "Data último contato",
       "Top 40",
@@ -1265,7 +1265,7 @@ export default function DashboardPage() {
       "Cód. cliente",
       "Cliente",
       "Emissão",
-      "Previsão",
+      "Vencimento",
       "Dias",
       "NF",
       "Categoria",
@@ -1760,7 +1760,7 @@ export default function DashboardPage() {
                         <thead className="bg-slate-100">
                           <tr>
                             <th className="text-left p-2">Emissão</th>
-                            <th className="text-left p-2">Previsão</th>
+                            <th className="text-left p-2">Vencimento</th>
                             <th className="text-left p-2">Dias</th>
                             <th className="text-left p-2">NF</th>
                             <th className="text-left p-2">Categoria</th>
@@ -1799,7 +1799,7 @@ export default function DashboardPage() {
                             <th className="text-left p-2">Cód.</th>
                             <th className="text-left p-2">Cliente</th>
                             <th className="text-left p-2">Emissão</th>
-                            <th className="text-left p-2">Previsão</th>
+                            <th className="text-left p-2">Vencimento</th>
                             <th className="text-left p-2">Dias</th>
                             <th className="text-left p-2">NF</th>
                             <th className="text-left p-2">Categoria</th>

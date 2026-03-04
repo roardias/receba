@@ -1,6 +1,10 @@
 # Como rodar o scheduler na VPS
 
-Depois que o servidor (VPS) estiver criado e você tiver o **IP** e acesso por **SSH**, siga estes passos para o scheduler chamar a API do Receba na Vercel nos horários configurados.
+**Recomendado:** Se você quer que a VPS funcione **igual à sua máquina** (quando `npm run dev` está rodando), use o guia **[RODAR_NA_VPS_IGUAL_MAQUINA.md](./RODAR_NA_VPS_IGUAL_MAQUINA.md)**. Nele você sobe o Next.js e o scheduler Python na VPS com as mesmas variáveis de ambiente — mesmo comportamento que no seu PC.
+
+---
+
+**Opção alternativa (cron + Vercel):** Abaixo, os passos para a VPS só rodar um **cron** que chama a API do Receba na Vercel nos horários configurados. O sync nesse caso é feito pela Edge Function do Supabase (fluxo diferente do Python da sua máquina).
 
 ---
 

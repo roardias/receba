@@ -54,13 +54,13 @@ export async function GET(req: NextRequest) {
     }
 
     const { diaSemana, horario } = getNowInSaoPaulo();
-    const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+    // RPC (POST) garante leitura no primary; GET em .from().select() pode ir para réplica com lag
+    const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
+      global: { headers: { "Cache-Control": "no-cache", Pragma: "no-cache" } },
+    });
 
-    // 1) Ler DIRETO da tabela api_agendamento
-    const { data: ags, error: errAg } = await supabase
-      .from("api_agendamento")
-      .select("id, api_tipos, dias_semana, horarios, empresa_ids, ativo, timezone")
-      .eq("ativo", true);
+    // 1) Ler via RPC para forçar primary (evitar horários “fantasma” por réplica atrasada)
+    const { data: ags, error: errAg } = await supabase.rpc("receba_get_api_agendamento_ativo");
 
     if (errAg) {
       return NextResponse.json(
