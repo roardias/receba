@@ -1279,7 +1279,8 @@ export default function DashboardPage() {
       r.codigo_nome_fantasia ?? "",
       r.nome_fantasia ?? "",
       formatarData(r.det_ddtemissao) ?? "",
-      formatarData(r.det_ddtprevisao) ?? "",
+      // Usa a data exatamente como vem da view (det_ddtprevisao)
+      r.det_ddtprevisao ?? "",
       r.qtde_dias ?? "",
       r.det_cnumdocfiscal ?? "",
       r.categoria_descricao ?? "",
