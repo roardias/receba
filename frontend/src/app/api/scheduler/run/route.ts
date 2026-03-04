@@ -83,7 +83,9 @@ export async function GET(req: NextRequest) {
       timezone: string;
     };
 
-    const alvos: Row[] = (rows as Row[]).filter((r) => {
+    const rowsArr = rows as Row[];
+
+    const alvos: Row[] = rowsArr.filter((r) => {
       // dias_semana pode vir como number[] ou string[]; normalizar para number[]
       const rawDias = r.dias_semana;
       const dias: number[] = Array.isArray(rawDias)
@@ -128,12 +130,78 @@ export async function GET(req: NextRequest) {
     });
 
     if (!alvos.length) {
-      return NextResponse.json({
-        ok: true,
-        message: "Nenhum agendamento de movimento_financeiro para este minuto",
-        diaSemana,
-        horario,
-      });
+      // Resposta detalhada para depuração quando não há alvos;
+      // protegida pelo CRON_SECRET.
+      const debug = (() => {
+        try {
+          // Quantos rows têm movimento_financeiro em api_tipos
+          const comMov = rowsArr.filter((r) => {
+            const rawApis = r.api_tipos;
+            let apis: string[] = [];
+            if (Array.isArray(rawApis)) {
+              apis = (rawApis as any[]).map((x) => String(x));
+            } else if (typeof rawApis === "string") {
+              try {
+                const parsed = JSON.parse(rawApis);
+                if (Array.isArray(parsed)) {
+                  apis = parsed.map((x: any) => String(x));
+                } else {
+                  apis = [rawApis];
+                }
+              } catch {
+                apis = [rawApis];
+              }
+            }
+            return apis.includes("movimento_financeiro");
+          });
+
+          // Desses, quantos batem o dia da semana
+          const comMovEDia = comMov.filter((r) => {
+            const rawDias = r.dias_semana;
+            const dias: number[] = Array.isArray(rawDias)
+              ? rawDias.map((d: any) => Number(d)).filter((d) => Number.isInteger(d))
+              : [];
+            return dias.includes(diaSemana);
+          });
+
+          // Desses, quais horários estão cadastrados
+          const horariosPorEmpresa = comMovEDia.map((r) => {
+            const rawHorarios = r.horarios;
+            const listaHorarios: string[] = Array.isArray(rawHorarios)
+              ? (rawHorarios as any[]).map((h) => String(h ?? ""))
+              : typeof rawHorarios === "string"
+              ? [rawHorarios]
+              : [];
+            const horarios = listaHorarios
+              .map((h) => (h || "").trim())
+              .map((h) => (h.length >= 5 ? h.slice(0, 5) : h));
+            return {
+              empresa_id: r.empresa_id,
+              horarios,
+            };
+          });
+
+          return {
+            total_rows: rowsArr.length,
+            com_movimento_financeiro: comMov.length,
+            com_movimento_e_dia: comMovEDia.length,
+            horarios_por_empresa: horariosPorEmpresa,
+          };
+        } catch {
+          return null;
+        }
+      })();
+
+      return NextResponse.json(
+        {
+          ok: true,
+          message: "Nenhum agendamento de movimento_financeiro para este minuto",
+          diaSemana,
+          horario,
+          debug,
+        },
+        { status: 200 },
+      );
     }
 
     const results = await Promise.allSettled(
