@@ -180,11 +180,10 @@ export default function HistoricoCobrancasPage() {
     if (!buscaNorm) return cobrancas;
     const norm = buscaNorm.toLowerCase();
     return cobrancas.filter((c) => {
+      // Filtro principal: nome do cliente e código do cliente.
       const matchTexto =
         (c.cliente_nome || "").toLowerCase().includes(norm) ||
-        (c.cod_cliente || "").toLowerCase().includes(norm) ||
-        (c.grupo_nome || "").toLowerCase().includes(norm) ||
-        (c.empresas_internas_nomes || "").toLowerCase().includes(norm);
+        (c.cod_cliente || "").toLowerCase().includes(norm);
       const docNumeros = soNumeros(c.cnpj_cpf || "");
       const matchCnpj =
         temDigitos &&
