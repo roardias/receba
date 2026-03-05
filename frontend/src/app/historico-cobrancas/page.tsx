@@ -147,8 +147,8 @@ export default function HistoricoCobrancasPage() {
       }
       const listById = (dataById || []) as Cobranca[];
 
-      // 2) Fallback: SEMPRE trazer também cobranças sem grupo_id mas com grupo_nome igual,
-      // para incluir registros antigos ou inserts que ainda não tenham grupo_id preenchido.
+      // 2) Fallback: sempre trazer também cobranças sem grupo_id mas com grupo_nome igual,
+      // garantindo que registros recentes de ligação/whatsapp também apareçam no histórico.
       let qFallback = supabase
         .from("cobrancas_realizadas")
         .select("id, created_at, data_contato, tipo, telefone_contato, telefone_tipo, cliente_nome, grupo_nome, empresas_internas_nomes, observacao, cod_cliente, cnpj_cpf, grupo_id, empresa_id")
