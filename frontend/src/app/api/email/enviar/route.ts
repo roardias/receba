@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { decrypt } from "@/lib/fernet-server";
+import { normalizarClienteNome } from "@/lib/clienteNome";
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -226,7 +227,7 @@ export async function POST(request: NextRequest) {
       ? cobrancaClientes.map((x) => ({
           cod_cliente: typeof x?.cod_cliente === "string" ? x.cod_cliente.trim() || null : null,
           cnpj_cpf: typeof x?.cnpj_cpf === "string" ? x.cnpj_cpf.trim() || null : null,
-          cliente_nome: typeof x?.cliente_nome === "string" ? x.cliente_nome.trim() || null : null,
+          cliente_nome: normalizarClienteNome(typeof x?.cliente_nome === "string" ? x.cliente_nome.trim() || null : null),
           grupo_nome: typeof x?.grupo_nome === "string" ? x.grupo_nome.trim() || null : null,
         }))
       : [];

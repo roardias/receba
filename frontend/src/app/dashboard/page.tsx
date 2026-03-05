@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import { supabase } from "@/lib/supabase";
+import { normalizarClienteNome } from "@/lib/clienteNome";
 import { useAuth } from "@/contexts/AuthContext";
 
 type Grupo = { id: string; nome: string };
@@ -1140,7 +1141,7 @@ export default function DashboardPage() {
         tipo: "ligacao",
         cod_cliente: cliente.cod_cliente,
         cnpj_cpf: cliente.cnpj_cpf,
-        cliente_nome: cliente.cliente_nome,
+        cliente_nome: normalizarClienteNome(cliente.cliente_nome),
         grupo_nome: cliente.grupo_nome,
         empresas_internas_nomes: empresasInternasNomesStr || null,
         grupo_id: grupoId || null,
@@ -1196,7 +1197,7 @@ export default function DashboardPage() {
         tipo: "whatsapp",
         cod_cliente: cliente.cod_cliente,
         cnpj_cpf: cliente.cnpj_cpf,
-        cliente_nome: cliente.cliente_nome,
+        cliente_nome: normalizarClienteNome(cliente.cliente_nome),
         grupo_nome: cliente.grupo_nome,
         empresas_internas_nomes: empresasInternasNomesStr || null,
         grupo_id: grupoId || null,

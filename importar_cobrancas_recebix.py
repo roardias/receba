@@ -16,6 +16,7 @@ Requer .env: SUPABASE_URL e SUPABASE_KEY. Se existir SUPABASE_SERVICE_ROLE_KEY, 
 import argparse
 import csv
 import os
+import re
 import sys
 from pathlib import Path
 from datetime import datetime
@@ -107,6 +108,18 @@ def _celula_vazia(val: str) -> bool:
     return str(val).strip() == ""
 
 
+def _normalizar_cliente_nome(s: str | None) -> str | None:
+    """Remove do início o padrão 'N - ' (número + ' - '). Ex.: '1087 - M5 Seguranca Ltda' -> 'M5 Seguranca Ltda'."""
+    if not s or not str(s).strip():
+        return s.strip() or None if s is not None else None
+    s = str(s).strip()
+    m = re.match(r"^\d+\s*-\s*(.*)$", s)
+    if m:
+        rest = m.group(1).strip()
+        return rest if rest else s
+    return s
+
+
 def normalizar_linha(raw: dict[str, str], colunas: list[str]) -> dict:
     out = {}
     for col in colunas:
@@ -122,6 +135,8 @@ def normalizar_linha(raw: dict[str, str], colunas: list[str]) -> dict:
         else:
             # Texto: string vazia vira None para o banco
             out[col] = val if val else None
+    if "cliente_nome" in out and out["cliente_nome"]:
+        out["cliente_nome"] = _normalizar_cliente_nome(out["cliente_nome"])
     return out
 
 
