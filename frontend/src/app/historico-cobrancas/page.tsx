@@ -180,16 +180,13 @@ export default function HistoricoCobrancasPage() {
     if (!buscaNorm) return cobrancas;
     const norm = buscaNorm.toLowerCase();
     return cobrancas.filter((c) => {
-      // Filtro principal: nome do cliente e código do cliente.
-      const matchTexto =
-        (c.cliente_nome || "").toLowerCase().includes(norm) ||
-        (c.cod_cliente || "").toLowerCase().includes(norm);
+      const matchNome = (c.cliente_nome || "").toLowerCase().includes(norm);
       const docNumeros = soNumeros(c.cnpj_cpf || "");
       const matchCnpj =
         temDigitos &&
         docNumeros.length > 0 &&
         (docNumeros.includes(buscaSoNumeros) || buscaSoNumeros.includes(docNumeros));
-      return matchTexto || matchCnpj;
+      return matchNome || matchCnpj;
     });
   }, [cobrancas, busca, buscaNorm, buscaSoNumeros, temDigitos, temTexto]);
 
@@ -340,13 +337,13 @@ export default function HistoricoCobrancasPage() {
         </div>
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">
-            Buscar (nome ou CNPJ/CPF)
+            Buscar por nome do cliente ou CNPJ/CPF
           </label>
           <input
             type="text"
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
-            placeholder="Nome do cliente ou CNPJ/CPF (pontos, / e - são ignorados)"
+            placeholder="Nome do cliente ou CNPJ/CPF"
             className="px-4 py-2 border rounded bg-white min-w-[260px]"
           />
         </div>
@@ -364,7 +361,6 @@ export default function HistoricoCobrancasPage() {
             {porCliente.map(([chave, itens]) => {
               const primeiro = itens[0];
               const nomeCliente = primeiro?.cliente_nome || "—";
-              const grupoEmpresa = [primeiro?.grupo_nome, primeiro?.empresas_internas_nomes].filter(Boolean).join(" · ") || "—";
               return (
                 <div key={chave}>
                   <h2 className="text-lg font-semibold text-slate-800 border-b border-slate-200 pb-2 mb-3">
@@ -373,20 +369,21 @@ export default function HistoricoCobrancasPage() {
                       <span className="text-slate-500 font-normal ml-2">Cód. {primeiro.cod_cliente}</span>
                     )}
                   </h2>
-                  <p className="text-slate-600 text-sm mb-2">{grupoEmpresa}</p>
                   <div className="overflow-x-auto border rounded bg-white">
                     <table className="w-full text-sm">
                       <thead className="bg-slate-100">
                         <tr>
+                          <th className="text-left p-2">Grupo</th>
                           <th className="text-left p-2">Forma de contato</th>
-                          <th className="text-left p-2">Data</th>
+                          <th className="text-left p-2">Data contato</th>
                           <th className="text-left p-2">Telefone</th>
-                          <th className="text-left p-2">Obs.</th>
+                          <th className="text-left p-2">Observação</th>
                         </tr>
                       </thead>
                       <tbody>
                         {itens.map((c) => (
                           <tr key={c.id} className="border-t border-slate-100 hover:bg-slate-50">
+                            <td className="p-2 text-slate-600">{c.grupo_nome ?? "—"}</td>
                             <td className="p-2">{formaContato(c.tipo)}</td>
                             <td className="p-2 text-slate-600">
                               {podeEditarObs && editingObsId === c.id ? (
