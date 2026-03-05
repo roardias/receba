@@ -28,7 +28,6 @@ function soNumeros(s: string): string {
   return (s || "").replace(/\D/g, "");
 }
 
-/** Formata data (YYYY-MM-DD ou ISO) para exibição pt-BR */
 function formataData(iso: string): string {
   return new Date(iso + (iso.length === 10 ? "T12:00:00" : "")).toLocaleDateString("pt-BR", {
     day: "2-digit",
@@ -39,18 +38,13 @@ function formataData(iso: string): string {
 
 function formaContato(tipo: string): string {
   switch (tipo) {
-    case "email":
-      return "E-mail";
-    case "ligacao":
-      return "Ligação";
-    case "whatsapp":
-      return "WhatsApp";
-    default:
-      return tipo;
+    case "email": return "E-mail";
+    case "ligacao": return "Ligação";
+    case "whatsapp": return "WhatsApp";
+    default: return tipo;
   }
 }
 
-/** Formata telefone só dígitos: 11 → (XX) 9 XXXX-XXXX, 10 → (XX) XXXX-XXXX */
 function formataTelefone(num: string | null): string {
   if (!num || !/^\d+$/.test(num)) return "—";
   const d = num.replace(/\D/g, "");
@@ -58,6 +52,8 @@ function formataTelefone(num: string | null): string {
   if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
   return num;
 }
+
+const COBRANCAS_COLUNAS = "id, created_at, data_contato, tipo, telefone_contato, telefone_tipo, cliente_nome, grupo_nome, empresas_internas_nomes, observacao, cod_cliente, cnpj_cpf, grupo_id, empresa_id";
 
 export default function HistoricoCobrancasPage() {
   const { hasPermissao } = useAuth();
@@ -68,10 +64,6 @@ export default function HistoricoCobrancasPage() {
   const [busca, setBusca] = useState("");
   const [cobrancas, setCobrancas] = useState<Cobranca[]>([]);
   const [loading, setLoading] = useState(true);
-  const [loadingCobrancas, setLoadingCobrancas] = useState(false);
-
-  const [allowedGrupoIds, setAllowedGrupoIds] = useState<Set<string>>(new Set());
-  const [allowedEmpresaIds, setAllowedEmpresaIds] = useState<Set<string>>(new Set());
 
   const [editingObsId, setEditingObsId] = useState<string | null>(null);
   const [editingObsValue, setEditingObsValue] = useState("");
@@ -82,114 +74,75 @@ export default function HistoricoCobrancasPage() {
 
   const hojeStr = new Date().toISOString().slice(0, 10);
 
+  // Carrega grupos, empresas e TODAS as cobranças de uma vez
   useEffect(() => {
+    let cancelled = false;
     (async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      const uid = session?.user?.id;
-      const [resGrupos, resEmpresas, resPG, resPE] = await Promise.all([
+      const [
+        { data: gruposData },
+        { data: empresasData },
+        { data: cobrancasData, error: errCob },
+      ] = await Promise.all([
         supabase.from("grupos").select("id, nome").order("nome"),
         supabase.from("empresas").select("id, nome_curto, grupo_id").order("nome_curto"),
-        uid
-          ? supabase.from("perfis_grupos").select("grupo_id").eq("perfil_id", uid)
-          : Promise.resolve({ data: null }),
-        uid
-          ? supabase.from("perfis_empresas").select("empresa_id").eq("perfil_id", uid)
-          : Promise.resolve({ data: null }),
+        supabase
+          .from("cobrancas_realizadas")
+          .select(COBRANCAS_COLUNAS)
+          .order("data_contato", { ascending: false, nullsFirst: false }),
       ]);
-      const gruposAll = (resGrupos.data || []) as Grupo[];
-      const empresasAll = (resEmpresas.data || []) as Empresa[];
-      const pg = (resPG.data || []) as { grupo_id: string }[];
-      const pe = (resPE.data || []) as { empresa_id: string }[];
-      const grupoIds = pg.length ? new Set(pg.map((r) => r.grupo_id)) : null;
-      const empresaIds = pe.length ? new Set(pe.map((r) => r.empresa_id)) : null;
-      setAllowedGrupoIds(grupoIds || new Set());
-      setAllowedEmpresaIds(empresaIds || new Set());
-      setGrupos(grupoIds ? gruposAll.filter((g) => grupoIds.has(g.id)) : gruposAll);
-      setEmpresas(empresaIds ? empresasAll.filter((e) => empresaIds.has(e.id)) : empresasAll);
+      if (cancelled) return;
+      setGrupos((gruposData || []) as Grupo[]);
+      setEmpresas((empresasData || []) as Empresa[]);
+      if (errCob) {
+        console.error(errCob);
+        setCobrancas([]);
+      } else {
+        setCobrancas((cobrancasData || []) as Cobranca[]);
+      }
       setLoading(false);
     })();
+    return () => { cancelled = true; };
   }, []);
 
-  const empresasFiltradas = grupoId
-    ? empresas.filter((e) => e.grupo_id === grupoId)
-    : empresas;
+  const empresasFiltradas = grupoId ? empresas.filter((e) => e.grupo_id === grupoId) : empresas;
   const grupoSelecionado = grupos.find((g) => g.id === grupoId);
   const empresaSelecionada = empresasFiltradas.find((e) => e.id === empresaId);
 
-  useEffect(() => {
-    if (!grupoId || !grupoSelecionado) {
-      setCobrancas([]);
-      return;
-    }
-    let cancelled = false;
-    setLoadingCobrancas(true);
-
-    // 1) Cobranças com grupo_id preenchido (após migration de relacionamentos)
-    let q = supabase
-      .from("cobrancas_realizadas")
-      .select("id, created_at, data_contato, tipo, telefone_contato, telefone_tipo, cliente_nome, grupo_nome, empresas_internas_nomes, observacao, cod_cliente, cnpj_cpf, grupo_id, empresa_id")
-      .eq("grupo_id", grupoId)
-      .order("data_contato", { ascending: false, nullsFirst: false });
-
-    if (empresaSelecionada) {
-      q = q.eq("empresa_id", empresaSelecionada.id);
-    }
-
-    q.then(async ({ data: dataById, error: err }) => {
-      if (cancelled) return;
-      if (err) {
-        setLoadingCobrancas(false);
-        console.error(err);
-        setCobrancas([]);
-        return;
-      }
-      const listById = (dataById || []) as Cobranca[];
-
-      // 2) Fallback: sempre trazer também cobranças sem grupo_id mas com grupo_nome igual,
-      // garantindo que registros recentes de ligação/whatsapp também apareçam no histórico.
-      let qFallback = supabase
-        .from("cobrancas_realizadas")
-        .select("id, created_at, data_contato, tipo, telefone_contato, telefone_tipo, cliente_nome, grupo_nome, empresas_internas_nomes, observacao, cod_cliente, cnpj_cpf, grupo_id, empresa_id")
-        .is("grupo_id", null)
-        .ilike("grupo_nome", grupoSelecionado.nome)
-        .order("data_contato", { ascending: false, nullsFirst: false });
-      if (empresaSelecionada) {
-        qFallback = qFallback.ilike("empresas_internas_nomes", "%" + empresaSelecionada.nome_curto + "%");
-      }
-      const { data: dataFallback } = await qFallback;
-      const listFallback = (dataFallback || []) as Cobranca[];
-
-      if (cancelled) return;
-      setLoadingCobrancas(false);
-      // Junta cobranças com grupo_id preenchido + sem grupo_id (grupo_nome igual)
-      setCobrancas([...listById, ...listFallback]);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [grupoId, grupoSelecionado?.id, grupoSelecionado?.nome, empresaSelecionada?.id, empresaSelecionada?.nome_curto]);
-
-  const buscaNorm = busca.trim();
-  const buscaSoNumeros = soNumeros(busca);
-  const temDigitos = buscaSoNumeros.length >= 2;
-  const temTexto = buscaNorm.length > 0 && buscaNorm.replace(/\d/g, "").trim().length > 0;
-
+  // Filtros: Grupo, Empresa e Busca (nome ou CNPJ/CPF) — todos opcionais
   const cobrancasFiltradas = useMemo(() => {
-    if (!buscaNorm) return cobrancas;
-    const norm = buscaNorm.toLowerCase();
-    return cobrancas.filter((c) => {
-      const matchNome = (c.cliente_nome || "").toLowerCase().includes(norm);
-      const docNumeros = soNumeros(c.cnpj_cpf || "");
-      const matchCnpj =
-        temDigitos &&
-        docNumeros.length > 0 &&
-        (docNumeros.includes(buscaSoNumeros) || buscaSoNumeros.includes(docNumeros));
-      return matchNome || matchCnpj;
-    });
-  }, [cobrancas, busca, buscaNorm, buscaSoNumeros, temDigitos, temTexto]);
+    let list = cobrancas;
 
+    if (grupoId && grupoSelecionado) {
+      list = list.filter(
+        (c) =>
+          c.grupo_id === grupoId ||
+          (c.grupo_nome || "").toLowerCase() === grupoSelecionado.nome.toLowerCase()
+      );
+    }
+    if (empresaId && empresaSelecionada) {
+      list = list.filter(
+        (c) =>
+          c.empresa_id === empresaSelecionada.id ||
+          (c.empresas_internas_nomes || "").toLowerCase().includes(empresaSelecionada.nome_curto.toLowerCase())
+      );
+    }
+
+    const buscaNorm = busca.trim();
+    if (buscaNorm) {
+      const norm = buscaNorm.toLowerCase();
+      const soNum = soNumeros(busca);
+      list = list.filter((c) => {
+        const matchNome = (c.cliente_nome || "").toLowerCase().includes(norm);
+        const docNum = soNumeros(c.cnpj_cpf || "");
+        const matchDoc = soNum.length >= 2 && docNum.length > 0 && (docNum.includes(soNum) || soNum.includes(docNum));
+        return matchNome || matchDoc;
+      });
+    }
+
+    return list;
+  }, [cobrancas, grupoId, grupoSelecionado, empresaId, empresaSelecionada, busca]);
+
+  // Agrupa por cliente (cod_cliente|cliente_nome|cnpj_cpf)
   const porCliente = useMemo(() => {
     const map = new Map<string, Cobranca[]>();
     for (const c of cobrancasFiltradas) {
@@ -206,11 +159,6 @@ export default function HistoricoCobrancasPage() {
       return nomeA.localeCompare(nomeB, "pt-BR");
     });
   }, [cobrancasFiltradas]);
-
-  function handleGrupoChange(e: React.ChangeEvent<HTMLSelectElement>) {
-    setGrupoId(e.target.value);
-    setEmpresaId("");
-  }
 
   function validaTelefoneEdicao(telefone: string, tipo: "celular" | "fixo" | null): { ok: boolean; msg?: string; valor?: string | null } {
     const nums = soNumeros(telefone);
@@ -239,7 +187,7 @@ export default function HistoricoCobrancasPage() {
     }
     setSavingObsId(id);
     const dataContatoVal = dataContato.trim() || null;
-    const payload: { observacao: string | null; data_contato: string | null; telefone_contato: string | null; telefone_tipo: string | null } = {
+    const payload = {
       observacao: valor.trim() || null,
       data_contato: dataContatoVal,
       telefone_contato: tel.valor ?? null,
@@ -296,49 +244,42 @@ export default function HistoricoCobrancasPage() {
         Histórico de cobranças por cliente
       </h1>
       <p className="text-slate-600 mt-1">
-        Filtre por grupo e empresa (mesmas regras de visibilidade). Busque por nome ou CNPJ/CPF (apenas números na base).
+        Todos os registros, agrupados por cliente. Use os filtros para refinar.
       </p>
 
       <div className="mt-6 flex flex-wrap gap-4 items-end">
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">
-            Grupo
-          </label>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Grupo</label>
           <select
             value={grupoId}
-            onChange={handleGrupoChange}
+            onChange={(e) => {
+              setGrupoId(e.target.value);
+              setEmpresaId("");
+            }}
             className="px-4 py-2 border rounded bg-white min-w-[200px]"
           >
-            <option value="">Selecione o grupo</option>
+            <option value="">Todos</option>
             {grupos.map((g) => (
-              <option key={g.id} value={g.id}>
-                {g.nome}
-              </option>
+              <option key={g.id} value={g.id}>{g.nome}</option>
             ))}
           </select>
         </div>
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">
-            Empresa
-          </label>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Empresa</label>
           <select
             value={empresaId}
             onChange={(e) => setEmpresaId(e.target.value)}
             className="px-4 py-2 border rounded bg-white min-w-[200px]"
             disabled={!grupoId}
           >
-            <option value="">Todas as empresas do grupo</option>
+            <option value="">Todas</option>
             {empresasFiltradas.map((e) => (
-              <option key={e.id} value={e.id}>
-                {e.nome_curto}
-              </option>
+              <option key={e.id} value={e.id}>{e.nome_curto}</option>
             ))}
           </select>
         </div>
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">
-            Buscar por nome do cliente ou CNPJ/CPF
-          </label>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Buscar (nome ou CNPJ/CPF)</label>
           <input
             type="text"
             value={busca}
@@ -350,11 +291,7 @@ export default function HistoricoCobrancasPage() {
       </div>
 
       <div className="mt-6">
-        {!grupoId ? (
-          <p className="text-slate-500">Selecione um grupo para ver o histórico.</p>
-        ) : loadingCobrancas ? (
-          <p className="text-slate-600">Carregando cobranças...</p>
-        ) : porCliente.length === 0 ? (
+        {porCliente.length === 0 ? (
           <p className="text-slate-500">Nenhuma cobrança encontrada.</p>
         ) : (
           <div className="space-y-8">
@@ -431,11 +368,7 @@ export default function HistoricoCobrancasPage() {
                                   <textarea
                                     value={editingObsValue}
                                     onChange={(e) => setEditingObsValue(e.target.value)}
-                                    onKeyDown={(e) => {
-                                      if (e.key === "Escape") {
-                                        setEditingObsId(null);
-                                      }
-                                    }}
+                                    onKeyDown={(e) => { if (e.key === "Escape") setEditingObsId(null); }}
                                     className="w-full min-h-[60px] p-2 border rounded text-sm"
                                     placeholder="Observação"
                                     autoFocus
@@ -449,27 +382,16 @@ export default function HistoricoCobrancasPage() {
                                     >
                                       {savingObsId === c.id ? "Salvando…" : "Salvar"}
                                     </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => setEditingObsId(null)}
-                                      className="px-2 py-1 text-slate-600 text-xs rounded hover:bg-slate-200"
-                                    >
+                                    <button type="button" onClick={() => setEditingObsId(null)} className="px-2 py-1 text-slate-600 text-xs rounded hover:bg-slate-200">
                                       Cancelar
                                     </button>
                                   </div>
                                 </div>
                               ) : (
                                 <div className="flex items-start gap-1">
-                                  <span title={c.observacao || ""} className="flex-1 min-w-0">
-                                    {c.observacao || "—"}
-                                  </span>
+                                  <span title={c.observacao || ""} className="flex-1 min-w-0">{c.observacao || "—"}</span>
                                   {podeEditarObs && (
-                                    <button
-                                      type="button"
-                                      onClick={() => iniciarEditarObs(c)}
-                                      className="text-slate-400 hover:text-slate-700 text-xs shrink-0"
-                                      title="Editar observação"
-                                    >
+                                    <button type="button" onClick={() => iniciarEditarObs(c)} className="text-slate-400 hover:text-slate-700 text-xs shrink-0" title="Editar observação">
                                       Editar
                                     </button>
                                   )}
