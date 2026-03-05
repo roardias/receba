@@ -346,7 +346,7 @@ export default function HistoricoCobrancasPage() {
             type="text"
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
-            placeholder="Nome ou CNPJ/CPF (pontos, / e - são ignorados)"
+            placeholder="Nome do cliente ou CNPJ/CPF (pontos, / e - são ignorados)"
             className="px-4 py-2 border rounded bg-white min-w-[260px]"
           />
         </div>
