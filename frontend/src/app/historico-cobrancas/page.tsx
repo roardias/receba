@@ -145,26 +145,26 @@ export default function HistoricoCobrancasPage() {
         setCobrancas([]);
         return;
       }
-      let list = (dataById || []) as Cobranca[];
+      const listById = (dataById || []) as Cobranca[];
 
-      // 2) Fallback: cobranças ainda sem grupo_id mas com grupo_nome igual (antes da migration ou sem match no backfill)
-      if (list.length === 0) {
-        let qFallback = supabase
-          .from("cobrancas_realizadas")
-          .select("id, created_at, data_contato, tipo, telefone_contato, telefone_tipo, cliente_nome, grupo_nome, empresas_internas_nomes, observacao, cod_cliente, cnpj_cpf, grupo_id, empresa_id")
-          .is("grupo_id", null)
-          .ilike("grupo_nome", grupoSelecionado.nome)
-          .order("data_contato", { ascending: false, nullsFirst: false });
-        if (empresaSelecionada) {
-          qFallback = qFallback.ilike("empresas_internas_nomes", "%" + empresaSelecionada.nome_curto + "%");
-        }
-        const { data: dataFallback } = await qFallback;
-        list = (dataFallback || []) as Cobranca[];
+      // 2) Fallback: SEMPRE trazer também cobranças sem grupo_id mas com grupo_nome igual,
+      // para incluir registros antigos ou inserts que ainda não tenham grupo_id preenchido.
+      let qFallback = supabase
+        .from("cobrancas_realizadas")
+        .select("id, created_at, data_contato, tipo, telefone_contato, telefone_tipo, cliente_nome, grupo_nome, empresas_internas_nomes, observacao, cod_cliente, cnpj_cpf, grupo_id, empresa_id")
+        .is("grupo_id", null)
+        .ilike("grupo_nome", grupoSelecionado.nome)
+        .order("data_contato", { ascending: false, nullsFirst: false });
+      if (empresaSelecionada) {
+        qFallback = qFallback.ilike("empresas_internas_nomes", "%" + empresaSelecionada.nome_curto + "%");
       }
+      const { data: dataFallback } = await qFallback;
+      const listFallback = (dataFallback || []) as Cobranca[];
 
       if (cancelled) return;
       setLoadingCobrancas(false);
-      setCobrancas(list);
+      // Junta cobranças com grupo_id preenchido + sem grupo_id (grupo_nome igual)
+      setCobrancas([...listById, ...listFallback]);
     });
     return () => {
       cancelled = true;
