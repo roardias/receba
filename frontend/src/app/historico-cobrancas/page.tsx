@@ -4,9 +4,6 @@ import { useEffect, useState, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/AuthContext";
 
-type Grupo = { id: string; nome: string };
-type Empresa = { id: string; nome_curto: string; grupo_id: string | null };
-
 type Cobranca = {
   id: string;
   created_at: string;
@@ -57,10 +54,6 @@ const COBRANCAS_COLUNAS = "id, created_at, data_contato, tipo, telefone_contato,
 
 export default function HistoricoCobrancasPage() {
   const { hasPermissao } = useAuth();
-  const [grupos, setGrupos] = useState<Grupo[]>([]);
-  const [empresas, setEmpresas] = useState<Empresa[]>([]);
-  const [grupoId, setGrupoId] = useState<string>("");
-  const [empresaId, setEmpresaId] = useState<string>("");
   const [busca, setBusca] = useState("");
   const [cobrancas, setCobrancas] = useState<Cobranca[]>([]);
   const [loading, setLoading] = useState(true);
@@ -74,25 +67,15 @@ export default function HistoricoCobrancasPage() {
 
   const hojeStr = new Date().toISOString().slice(0, 10);
 
-  // Carrega grupos, empresas e TODAS as cobranças de uma vez
+  // Carrega todas as cobranças de uma vez
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [
-        { data: gruposData },
-        { data: empresasData },
-        { data: cobrancasData, error: errCob },
-      ] = await Promise.all([
-        supabase.from("grupos").select("id, nome").order("nome"),
-        supabase.from("empresas").select("id, nome_curto, grupo_id").order("nome_curto"),
-        supabase
-          .from("cobrancas_realizadas")
-          .select(COBRANCAS_COLUNAS)
-          .order("data_contato", { ascending: false, nullsFirst: false }),
-      ]);
+      const { data: cobrancasData, error: errCob } = await supabase
+        .from("cobrancas_realizadas")
+        .select(COBRANCAS_COLUNAS)
+        .order("data_contato", { ascending: false, nullsFirst: false });
       if (cancelled) return;
-      setGrupos((gruposData || []) as Grupo[]);
-      setEmpresas((empresasData || []) as Empresa[]);
       if (errCob) {
         console.error(errCob);
         setCobrancas([]);
@@ -104,29 +87,9 @@ export default function HistoricoCobrancasPage() {
     return () => { cancelled = true; };
   }, []);
 
-  const empresasFiltradas = grupoId ? empresas.filter((e) => e.grupo_id === grupoId) : empresas;
-  const grupoSelecionado = grupos.find((g) => g.id === grupoId);
-  const empresaSelecionada = empresasFiltradas.find((e) => e.id === empresaId);
-
-  // Filtros: Grupo, Empresa e Busca (cliente_nome) — todos opcionais
+  // Filtro: apenas busca por cliente_nome (opcional)
   const cobrancasFiltradas = useMemo(() => {
     let list = cobrancas;
-
-    if (grupoId && grupoSelecionado) {
-      list = list.filter(
-        (c) =>
-          c.grupo_id === grupoId ||
-          (c.grupo_nome || "").toLowerCase() === grupoSelecionado.nome.toLowerCase()
-      );
-    }
-    if (empresaId && empresaSelecionada) {
-      list = list.filter(
-        (c) =>
-          c.empresa_id === empresaSelecionada.id ||
-          (c.empresas_internas_nomes || "").toLowerCase().includes(empresaSelecionada.nome_curto.toLowerCase())
-      );
-    }
-
     const buscaNorm = busca.trim();
     if (buscaNorm) {
       const norm = buscaNorm.toLowerCase();
@@ -136,7 +99,7 @@ export default function HistoricoCobrancasPage() {
     }
 
     return list;
-  }, [cobrancas, grupoId, grupoSelecionado, empresaId, empresaSelecionada, busca]);
+  }, [cobrancas, busca]);
 
   // Lista plana ordenada por data (para modo de busca, sem agrupamento)
   const cobrancasOrdenadas = useMemo(
@@ -231,40 +194,10 @@ export default function HistoricoCobrancasPage() {
         Histórico de cobranças por cliente
       </h1>
       <p className="text-slate-600 mt-1">
-        Lista de registros da tabela de cobranças realizadas, com filtros por grupo, empresa e nome do cliente.
+        Lista de registros da tabela de cobranças realizadas, com filtro por nome do cliente.
       </p>
 
       <div className="mt-6 flex flex-wrap gap-4 items-end">
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Grupo</label>
-          <select
-            value={grupoId}
-            onChange={(e) => {
-              setGrupoId(e.target.value);
-              setEmpresaId("");
-            }}
-            className="px-4 py-2 border rounded bg-white min-w-[200px]"
-          >
-            <option value="">Todos</option>
-            {grupos.map((g) => (
-              <option key={g.id} value={g.id}>{g.nome}</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Empresa</label>
-          <select
-            value={empresaId}
-            onChange={(e) => setEmpresaId(e.target.value)}
-            className="px-4 py-2 border rounded bg-white min-w-[200px]"
-            disabled={!grupoId}
-          >
-            <option value="">Todas</option>
-            {empresasFiltradas.map((e) => (
-              <option key={e.id} value={e.id}>{e.nome_curto}</option>
-            ))}
-          </select>
-        </div>
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Buscar por cliente</label>
           <input
