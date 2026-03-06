@@ -67,7 +67,7 @@ export default function HistoricoCobrancasPage() {
 
   const hojeStr = new Date().toISOString().slice(0, 10);
 
-  // Carrega cobranças, com filtro opcional por cliente_nome
+  // Carrega cobranças, com filtro opcional por cliente_nome, cod_cliente ou grupo_nome
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -78,7 +78,10 @@ export default function HistoricoCobrancasPage() {
         .order("data_contato", { ascending: false, nullsFirst: false });
 
       if (buscaNorm) {
-        query = query.ilike("cliente_nome", `%${buscaNorm}%`);
+        const padrao = `%${buscaNorm.replace(/"/g, '""')}%`;
+        query = query.or(
+          `cliente_nome.ilike."${padrao}",cod_cliente.ilike."${padrao}",grupo_nome.ilike."${padrao}"`
+        );
       }
 
       const { data: cobrancasData, error: errCob } = await query;
@@ -178,17 +181,17 @@ export default function HistoricoCobrancasPage() {
         Histórico de cobranças por cliente
       </h1>
       <p className="text-slate-600 mt-1">
-        Lista de registros da tabela de cobranças realizadas, com filtro por nome do cliente.
+        Lista de registros da tabela de cobranças realizadas. Busca por cliente, código ou grupo.
       </p>
 
       <div className="mt-6 flex flex-wrap gap-4 items-end">
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Buscar por cliente</label>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Buscar</label>
           <input
             type="text"
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
-            placeholder="Nome do cliente"
+            placeholder="Cliente, código ou grupo"
             className="px-4 py-2 border rounded bg-white min-w-[260px]"
           />
         </div>
