@@ -142,11 +142,14 @@ export default function HistoricoCobrancasPage() {
     return list;
   }, [cobrancas, grupoId, grupoSelecionado, empresaId, empresaSelecionada, busca]);
 
-  // Agrupa por cliente (cod_cliente|cliente_nome|cnpj_cpf)
+  // Agrupa por cliente (cliente_nome + CNPJ/CPF)
   const porCliente = useMemo(() => {
     const map = new Map<string, Cobranca[]>();
     for (const c of cobrancasFiltradas) {
-      const chave = [c.cod_cliente ?? "", c.cliente_nome ?? "", c.cnpj_cpf ?? ""].join("|");
+      const chave = [
+        (c.cliente_nome ?? "").trim().toLowerCase(),
+        (c.cnpj_cpf ?? "").trim(),
+      ].join("|");
       if (!map.has(chave)) map.set(chave, []);
       map.get(chave)!.push(c);
     }
