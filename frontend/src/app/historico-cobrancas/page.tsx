@@ -108,7 +108,7 @@ export default function HistoricoCobrancasPage() {
   const grupoSelecionado = grupos.find((g) => g.id === grupoId);
   const empresaSelecionada = empresasFiltradas.find((e) => e.id === empresaId);
 
-  // Filtros: Grupo, Empresa e Busca (nome ou CNPJ/CPF) — todos opcionais
+  // Filtros: Grupo, Empresa e Busca (cliente_nome, cod_cliente, CNPJ/CPF ou grupo_nome) — todos opcionais
   const cobrancasFiltradas = useMemo(() => {
     let list = cobrancas;
 
@@ -130,12 +130,23 @@ export default function HistoricoCobrancasPage() {
     const buscaNorm = busca.trim();
     if (buscaNorm) {
       const norm = buscaNorm.toLowerCase();
-      const soNum = soNumeros(busca);
+      const soNum = soNumeros(buscaNorm);
       list = list.filter((c) => {
-        const matchNome = (c.cliente_nome || "").toLowerCase().includes(norm);
-        const docNum = soNumeros(c.cnpj_cpf || "");
-        const matchDoc = soNum.length >= 2 && docNum.length > 0 && (docNum.includes(soNum) || soNum.includes(docNum));
-        return matchNome || matchDoc;
+        const nome = (c.cliente_nome || "").toLowerCase();
+        const grupo = (c.grupo_nome || "").toLowerCase();
+        const cod = (c.cod_cliente || "").toLowerCase();
+        const matchTexto = nome.includes(norm) || grupo.includes(norm) || cod.includes(norm);
+
+        let matchDoc = false;
+        if (soNum.length >= 2) {
+          const codNum = soNumeros(c.cod_cliente || "");
+          const docNum = soNumeros(c.cnpj_cpf || "");
+          matchDoc =
+            (codNum.length > 0 && (codNum.includes(soNum) || soNum.includes(codNum))) ||
+            (docNum.length > 0 && (docNum.includes(soNum) || soNum.includes(docNum)));
+        }
+
+        return matchTexto || matchDoc;
       });
     }
 
@@ -162,6 +173,15 @@ export default function HistoricoCobrancasPage() {
       return nomeA.localeCompare(nomeB, "pt-BR");
     });
   }, [cobrancasFiltradas]);
+
+  // Lista plana ordenada por data (para modo de busca, sem agrupamento)
+  const cobrancasOrdenadas = useMemo(
+    () =>
+      [...cobrancasFiltradas].sort((a, b) =>
+        (b.data_contato || b.created_at).localeCompare(a.data_contato || a.created_at)
+      ),
+    [cobrancasFiltradas]
+  );
 
   function validaTelefoneEdicao(telefone: string, tipo: "celular" | "fixo" | null): { ok: boolean; msg?: string; valor?: string | null } {
     const nums = soNumeros(telefone);
