@@ -108,7 +108,7 @@ export default function HistoricoCobrancasPage() {
   const grupoSelecionado = grupos.find((g) => g.id === grupoId);
   const empresaSelecionada = empresasFiltradas.find((e) => e.id === empresaId);
 
-  // Filtros: Grupo, Empresa e Busca (cliente_nome, cod_cliente, CNPJ/CPF ou grupo_nome) — todos opcionais
+  // Filtros: Grupo, Empresa e Busca (cliente_nome) — todos opcionais
   const cobrancasFiltradas = useMemo(() => {
     let list = cobrancas;
 
@@ -130,24 +130,9 @@ export default function HistoricoCobrancasPage() {
     const buscaNorm = busca.trim();
     if (buscaNorm) {
       const norm = buscaNorm.toLowerCase();
-      const soNum = soNumeros(buscaNorm);
-      list = list.filter((c) => {
-        const nome = (c.cliente_nome || "").toLowerCase();
-        const grupo = (c.grupo_nome || "").toLowerCase();
-        const cod = (c.cod_cliente || "").toLowerCase();
-        const matchTexto = nome.includes(norm) || grupo.includes(norm) || cod.includes(norm);
-
-        let matchDoc = false;
-        if (soNum.length >= 2) {
-          const codNum = soNumeros(c.cod_cliente || "");
-          const docNum = soNumeros(c.cnpj_cpf || "");
-          matchDoc =
-            (codNum.length > 0 && (codNum.includes(soNum) || soNum.includes(codNum))) ||
-            (docNum.length > 0 && (docNum.includes(soNum) || soNum.includes(docNum)));
-        }
-
-        return matchTexto || matchDoc;
-      });
+      list = list.filter((c) =>
+        (c.cliente_nome || "").toLowerCase().includes(norm)
+      );
     }
 
     return list;
@@ -260,6 +245,7 @@ export default function HistoricoCobrancasPage() {
   }
 
   const podeEditarObs = hasPermissao("historico_cobrancas_editar");
+  const temBusca = busca.trim().length > 0;
 
   return (
     <div>
@@ -314,8 +300,145 @@ export default function HistoricoCobrancasPage() {
       </div>
 
       <div className="mt-6">
-        {porCliente.length === 0 ? (
+        {cobrancasFiltradas.length === 0 ? (
           <p className="text-slate-500">Nenhuma cobrança encontrada.</p>
+        ) : temBusca ? (
+          <div className="overflow-x-auto border rounded bg-white">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-100">
+                <tr>
+                  <th className="text-left p-2">Cliente</th>
+                  <th className="text-left p-2">Grupo</th>
+                  <th className="text-left p-2">Forma de contato</th>
+                  <th className="text-left p-2">Data contato</th>
+                  <th className="text-left p-2">Telefone</th>
+                  <th className="text-left p-2">Observação</th>
+                </tr>
+              </thead>
+              <tbody>
+                {cobrancasOrdenadas.map((c) => (
+                  <tr key={c.id} className="border-t border-slate-100 hover:bg-slate-50">
+                    <td className="p-2 text-slate-800">
+                      <div className="flex flex-col">
+                        <span>{c.cliente_nome || "—"}</span>
+                        <span className="text-xs text-slate-500">
+                          {c.cod_cliente ? `Cód. ${c.cod_cliente}` : ""}
+                          {c.cnpj_cpf ? (c.cod_cliente ? " · " : "") + c.cnpj_cpf : ""}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="p-2 text-slate-600">{c.grupo_nome ?? "—"}</td>
+                    <td className="p-2">{formaContato(c.tipo)}</td>
+                    <td className="p-2 text-slate-600">
+                      {podeEditarObs && editingObsId === c.id ? (
+                        <input
+                          type="date"
+                          value={editingDataContato}
+                          max={hojeStr}
+                          onChange={(e) => setEditingDataContato(e.target.value)}
+                          className="p-1 border rounded text-sm"
+                        />
+                      ) : (
+                        formataData(c.data_contato || c.created_at)
+                      )}
+                    </td>
+                    <td className="p-2 text-slate-600 whitespace-nowrap">
+                      {podeEditarObs && editingObsId === c.id ? (
+                        <div className="flex flex-col gap-1">
+                          <div className="flex gap-2">
+                            <label className="inline-flex items-center gap-1 text-xs">
+                              <input
+                                type="radio"
+                                name={`tipoTel-${c.id}`}
+                                checked={editingTelefoneTipo === "celular"}
+                                onChange={() => setEditingTelefoneTipo("celular")}
+                                className="rounded"
+                              />
+                              Celular
+                            </label>
+                            <label className="inline-flex items-center gap-1 text-xs">
+                              <input
+                                type="radio"
+                                name={`tipoTel-${c.id}`}
+                                checked={editingTelefoneTipo === "fixo"}
+                                onChange={() => setEditingTelefoneTipo("fixo")}
+                                className="rounded"
+                              />
+                              Fixo
+                            </label>
+                          </div>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            value={editingTelefone}
+                            onChange={(e) => setEditingTelefone(soNumeros(e.target.value))}
+                            placeholder="61999999999"
+                            maxLength={11}
+                            className="p-1 border rounded text-sm w-28"
+                          />
+                        </div>
+                      ) : (
+                        formataTelefone(c.telefone_contato)
+                      )}
+                    </td>
+                    <td className="p-2 max-w-md align-top">
+                      {podeEditarObs && editingObsId === c.id ? (
+                        <div className="flex flex-col gap-1">
+                          <textarea
+                            value={editingObsValue}
+                            onChange={(e) => setEditingObsValue(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Escape") {
+                                setEditingObsId(null);
+                              }
+                            }}
+                            className="w-full min-h-[60px] p-2 border rounded text-sm"
+                            placeholder="Observação"
+                            autoFocus
+                          />
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                salvarObs(c.id, editingObsValue, editingDataContato, editingTelefone, editingTelefoneTipo)
+                              }
+                              disabled={savingObsId === c.id}
+                              className="px-2 py-1 bg-slate-700 text-white text-xs rounded hover:bg-slate-600 disabled:opacity-50"
+                            >
+                              {savingObsId === c.id ? "Salvando…" : "Salvar"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingObsId(null)}
+                              className="px-2 py-1 text-slate-600 text-xs rounded hover:bg-slate-200"
+                            >
+                              Cancelar
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-start gap-1">
+                          <span title={c.observacao || ""} className="flex-1 min-w-0">
+                            {c.observacao || "—"}
+                          </span>
+                          {podeEditarObs && (
+                            <button
+                              type="button"
+                              onClick={() => iniciarEditarObs(c)}
+                              className="text-slate-400 hover:text-slate-700 text-xs shrink-0"
+                              title="Editar observação"
+                            >
+                              Editar
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         ) : (
           <div className="space-y-8">
             {porCliente.map(([chave, itens]) => {
@@ -363,11 +486,23 @@ export default function HistoricoCobrancasPage() {
                                 <div className="flex flex-col gap-1">
                                   <div className="flex gap-2">
                                     <label className="inline-flex items-center gap-1 text-xs">
-                                      <input type="radio" name={`tipoTel-${c.id}`} checked={editingTelefoneTipo === "celular"} onChange={() => setEditingTelefoneTipo("celular")} className="rounded" />
+                                      <input
+                                        type="radio"
+                                        name={`tipoTel-${c.id}`}
+                                        checked={editingTelefoneTipo === "celular"}
+                                        onChange={() => setEditingTelefoneTipo("celular")}
+                                        className="rounded"
+                                      />
                                       Celular
                                     </label>
                                     <label className="inline-flex items-center gap-1 text-xs">
-                                      <input type="radio" name={`tipoTel-${c.id}`} checked={editingTelefoneTipo === "fixo"} onChange={() => setEditingTelefoneTipo("fixo")} className="rounded" />
+                                      <input
+                                        type="radio"
+                                        name={`tipoTel-${c.id}`}
+                                        checked={editingTelefoneTipo === "fixo"}
+                                        onChange={() => setEditingTelefoneTipo("fixo")}
+                                        className="rounded"
+                                      />
                                       Fixo
                                     </label>
                                   </div>
