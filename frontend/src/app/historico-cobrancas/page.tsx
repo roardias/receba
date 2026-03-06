@@ -55,6 +55,7 @@ const COBRANCAS_COLUNAS = "id, created_at, data_contato, tipo, telefone_contato,
 export default function HistoricoCobrancasPage() {
   const { hasPermissao, user } = useAuth();
   const [busca, setBusca] = useState("");
+  const [buscaDebounced, setBuscaDebounced] = useState("");
   const [cobrancas, setCobrancas] = useState<Cobranca[]>([]);
   const [loading, setLoading] = useState(true);
   const [allowedGrupoIds, setAllowedGrupoIds] = useState<Set<string>>(new Set());
@@ -94,6 +95,12 @@ export default function HistoricoCobrancasPage() {
     return () => { cancelled = true; };
   }, [user?.id]);
 
+  // Debounce da busca: só atualiza após 500ms sem digitar (evita consulta a cada letra)
+  useEffect(() => {
+    const t = setTimeout(() => setBuscaDebounced(busca), 500);
+    return () => clearTimeout(t);
+  }, [busca]);
+
   // Ao voltar para a aba/janela, refaz a consulta (evita dados desatualizados após UPDATE no banco)
   useEffect(() => {
     const onFocus = () => setRefreshKey((k) => k + 1);
@@ -107,7 +114,7 @@ export default function HistoricoCobrancasPage() {
     setLoading(true);
     let cancelled = false;
     (async () => {
-      const buscaNorm = busca.trim();
+      const buscaNorm = buscaDebounced.trim();
       let query = supabase
         .from("cobrancas_realizadas")
         .select(COBRANCAS_COLUNAS)
@@ -144,7 +151,7 @@ export default function HistoricoCobrancasPage() {
       setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [busca, visibilidadeCarregada, refreshKey, allowedGrupoIds, allowedEmpresaIds]);
+  }, [buscaDebounced, visibilidadeCarregada, refreshKey, allowedGrupoIds, allowedEmpresaIds]);
 
   function validaTelefoneEdicao(telefone: string, tipo: "celular" | "fixo" | null): { ok: boolean; msg?: string; valor?: string | null } {
     const nums = soNumeros(telefone);
