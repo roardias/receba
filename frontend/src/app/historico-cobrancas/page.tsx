@@ -254,7 +254,6 @@ export default function HistoricoCobrancasPage() {
             <table className="w-full text-sm">
               <thead className="bg-slate-100">
                 <tr>
-                  <th className="text-left p-2">ID</th>
                   <th className="text-left p-2">Grupo</th>
                   <th className="text-left p-2">Cliente</th>
                   <th className="text-left p-2">CNPJ/CPF</th>
@@ -267,7 +266,6 @@ export default function HistoricoCobrancasPage() {
               <tbody>
                 {cobrancas.map((c) => (
                   <tr key={c.id} className="border-t border-slate-100 hover:bg-slate-50">
-                    <td className="p-2 text-xs text-slate-500 whitespace-nowrap">{c.id}</td>
                     <td className="p-2 text-slate-600">{c.grupo_nome ?? "—"}</td>
                     <td className="p-2 text-slate-800">
                       <div className="flex flex-col">
