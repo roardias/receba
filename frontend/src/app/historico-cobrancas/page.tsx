@@ -109,12 +109,12 @@ export default function HistoricoCobrancasPage() {
       const hasEmpresas = allowedEmpresaIds.size > 0;
       if (hasGrupos && hasEmpresas) {
         query = query.or(
-          `grupo_id.in.(${[...allowedGrupoIds].join(",")}),empresa_id.in.(${[...allowedEmpresaIds].join(",")})`
+          `grupo_id.in.(${Array.from(allowedGrupoIds).join(",")}),empresa_id.in.(${Array.from(allowedEmpresaIds).join(",")})`
         );
       } else if (hasGrupos) {
-        query = query.in("grupo_id", [...allowedGrupoIds]);
+        query = query.in("grupo_id", Array.from(allowedGrupoIds));
       } else if (hasEmpresas) {
-        query = query.in("empresa_id", [...allowedEmpresaIds]);
+        query = query.in("empresa_id", Array.from(allowedEmpresaIds));
       }
 
       if (buscaNorm) {
