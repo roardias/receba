@@ -60,6 +60,7 @@ export default function HistoricoCobrancasPage() {
   const [allowedGrupoIds, setAllowedGrupoIds] = useState<Set<string>>(new Set());
   const [allowedEmpresaIds, setAllowedEmpresaIds] = useState<Set<string>>(new Set());
   const [visibilidadeCarregada, setVisibilidadeCarregada] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const [editingObsId, setEditingObsId] = useState<string | null>(null);
   const [editingObsValue, setEditingObsValue] = useState("");
@@ -93,9 +94,17 @@ export default function HistoricoCobrancasPage() {
     return () => { cancelled = true; };
   }, [user?.id]);
 
+  // Ao voltar para a aba/janela, refaz a consulta (evita dados desatualizados após UPDATE no banco)
+  useEffect(() => {
+    const onFocus = () => setRefreshKey((k) => k + 1);
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, []);
+
   // Carrega cobranças respeitando visibilidade (grupo/empresa) e filtro de busca
   useEffect(() => {
     if (!visibilidadeCarregada) return;
+    setLoading(true);
     let cancelled = false;
     (async () => {
       const buscaNorm = busca.trim();
@@ -135,7 +144,7 @@ export default function HistoricoCobrancasPage() {
       setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [busca, visibilidadeCarregada, allowedGrupoIds, allowedEmpresaIds]);
+  }, [busca, visibilidadeCarregada, refreshKey, allowedGrupoIds, allowedEmpresaIds]);
 
   function validaTelefoneEdicao(telefone: string, tipo: "celular" | "fixo" | null): { ok: boolean; msg?: string; valor?: string | null } {
     const nums = soNumeros(telefone);
