@@ -53,10 +53,13 @@ function formataTelefone(num: string | null): string {
 const COBRANCAS_COLUNAS = "id, created_at, data_contato, tipo, telefone_contato, telefone_tipo, cliente_nome, grupo_nome, empresas_internas_nomes, observacao, cod_cliente, cnpj_cpf, grupo_id, empresa_id";
 
 export default function HistoricoCobrancasPage() {
-  const { hasPermissao } = useAuth();
+  const { hasPermissao, user } = useAuth();
   const [busca, setBusca] = useState("");
   const [cobrancas, setCobrancas] = useState<Cobranca[]>([]);
   const [loading, setLoading] = useState(true);
+  const [allowedGrupoIds, setAllowedGrupoIds] = useState<Set<string>>(new Set());
+  const [allowedEmpresaIds, setAllowedEmpresaIds] = useState<Set<string>>(new Set());
+  const [visibilidadeCarregada, setVisibilidadeCarregada] = useState(false);
 
   const [editingObsId, setEditingObsId] = useState<string | null>(null);
   const [editingObsValue, setEditingObsValue] = useState("");
@@ -67,8 +70,32 @@ export default function HistoricoCobrancasPage() {
 
   const hojeStr = new Date().toISOString().slice(0, 10);
 
-  // Carrega cobranças, com filtro opcional por cliente_nome, cod_cliente ou grupo_nome
+  // Carrega visibilidade do usuário (grupos/empresas que pode ver). Vazio = vê todos.
   useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const uid = user?.id;
+      if (!uid) {
+        setVisibilidadeCarregada(true);
+        return;
+      }
+      const [resPG, resPE] = await Promise.all([
+        supabase.from("perfis_grupos").select("grupo_id").eq("perfil_id", uid),
+        supabase.from("perfis_empresas").select("empresa_id").eq("perfil_id", uid),
+      ]);
+      if (cancelled) return;
+      const pg = (resPG.data || []) as { grupo_id: string }[];
+      const pe = (resPE.data || []) as { empresa_id: string }[];
+      setAllowedGrupoIds(pg.length ? new Set(pg.map((r) => r.grupo_id)) : new Set());
+      setAllowedEmpresaIds(pe.length ? new Set(pe.map((r) => r.empresa_id)) : new Set());
+      setVisibilidadeCarregada(true);
+    })();
+    return () => { cancelled = true; };
+  }, [user?.id]);
+
+  // Carrega cobranças respeitando visibilidade (grupo/empresa) e filtro de busca
+  useEffect(() => {
+    if (!visibilidadeCarregada) return;
     let cancelled = false;
     (async () => {
       const buscaNorm = busca.trim();
@@ -76,6 +103,19 @@ export default function HistoricoCobrancasPage() {
         .from("cobrancas_realizadas")
         .select(COBRANCAS_COLUNAS)
         .order("data_contato", { ascending: false, nullsFirst: false });
+
+      // Restrição por grupo/empresa: se usuário tem perfis_grupos ou perfis_empresas, filtra
+      const hasGrupos = allowedGrupoIds.size > 0;
+      const hasEmpresas = allowedEmpresaIds.size > 0;
+      if (hasGrupos && hasEmpresas) {
+        query = query.or(
+          `grupo_id.in.(${[...allowedGrupoIds].join(",")}),empresa_id.in.(${[...allowedEmpresaIds].join(",")})`
+        );
+      } else if (hasGrupos) {
+        query = query.in("grupo_id", [...allowedGrupoIds]);
+      } else if (hasEmpresas) {
+        query = query.in("empresa_id", [...allowedEmpresaIds]);
+      }
 
       if (buscaNorm) {
         const padrao = `%${buscaNorm.replace(/"/g, '""')}%`;
@@ -95,7 +135,7 @@ export default function HistoricoCobrancasPage() {
       setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [busca]);
+  }, [busca, visibilidadeCarregada, allowedGrupoIds, allowedEmpresaIds]);
 
   function validaTelefoneEdicao(telefone: string, tipo: "celular" | "fixo" | null): { ok: boolean; msg?: string; valor?: string | null } {
     const nums = soNumeros(telefone);
