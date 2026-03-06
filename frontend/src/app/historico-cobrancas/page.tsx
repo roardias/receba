@@ -52,15 +52,6 @@ function formataTelefone(num: string | null): string {
 
 const COBRANCAS_COLUNAS = "id, created_at, data_contato, tipo, telefone_contato, telefone_tipo, cliente_nome, grupo_nome, empresas_internas_nomes, observacao, cod_cliente, cnpj_cpf, grupo_id, empresa_id";
 
-function normalizaTexto(s: string): string {
-  return s
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
 export default function HistoricoCobrancasPage() {
   const { hasPermissao } = useAuth();
   const [busca, setBusca] = useState("");
@@ -76,14 +67,21 @@ export default function HistoricoCobrancasPage() {
 
   const hojeStr = new Date().toISOString().slice(0, 10);
 
-  // Carrega todas as cobranças de uma vez
+  // Carrega cobranças, com filtro opcional por cliente_nome
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const { data: cobrancasData, error: errCob } = await supabase
+      const buscaNorm = busca.trim();
+      let query = supabase
         .from("cobrancas_realizadas")
         .select(COBRANCAS_COLUNAS)
         .order("data_contato", { ascending: false, nullsFirst: false });
+
+      if (buscaNorm) {
+        query = query.ilike("cliente_nome", `%${buscaNorm}%`);
+      }
+
+      const { data: cobrancasData, error: errCob } = await query;
       if (cancelled) return;
       if (errCob) {
         console.error(errCob);
@@ -94,28 +92,7 @@ export default function HistoricoCobrancasPage() {
       setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, []);
-
-  // Filtro: apenas busca por cliente_nome (opcional)
-  const cobrancasFiltradas = useMemo(() => {
-    let list = cobrancas;
-    const buscaNorm = busca.trim();
-    if (buscaNorm) {
-      const norm = normalizaTexto(buscaNorm);
-      list = list.filter((c) => normalizaTexto(c.cliente_nome || "").includes(norm));
-    }
-
-    return list;
-  }, [cobrancas, busca]);
-
-  // Lista plana ordenada por data (para modo de busca, sem agrupamento)
-  const cobrancasOrdenadas = useMemo(
-    () =>
-      [...cobrancasFiltradas].sort((a, b) =>
-        (b.data_contato || b.created_at).localeCompare(a.data_contato || a.created_at)
-      ),
-    [cobrancasFiltradas]
-  );
+  }, [busca]);
 
   function validaTelefoneEdicao(telefone: string, tipo: "celular" | "fixo" | null): { ok: boolean; msg?: string; valor?: string | null } {
     const nums = soNumeros(telefone);
@@ -218,7 +195,7 @@ export default function HistoricoCobrancasPage() {
       </div>
 
       <div className="mt-6">
-        {cobrancasFiltradas.length === 0 ? (
+        {cobrancas.length === 0 ? (
           <p className="text-slate-500">Nenhuma cobrança encontrada.</p>
         ) : (
           <div className="overflow-x-auto border rounded bg-white">
@@ -236,7 +213,7 @@ export default function HistoricoCobrancasPage() {
                 </tr>
               </thead>
               <tbody>
-                {cobrancasOrdenadas.map((c) => (
+                {cobrancas.map((c) => (
                   <tr key={c.id} className="border-t border-slate-100 hover:bg-slate-50">
                     <td className="p-2 text-xs text-slate-500 whitespace-nowrap">{c.id}</td>
                     <td className="p-2 text-slate-600">{c.grupo_nome ?? "—"}</td>
