@@ -52,6 +52,15 @@ function formataTelefone(num: string | null): string {
 
 const COBRANCAS_COLUNAS = "id, created_at, data_contato, tipo, telefone_contato, telefone_tipo, cliente_nome, grupo_nome, empresas_internas_nomes, observacao, cod_cliente, cnpj_cpf, grupo_id, empresa_id";
 
+function normalizaTexto(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export default function HistoricoCobrancasPage() {
   const { hasPermissao } = useAuth();
   const [busca, setBusca] = useState("");
@@ -92,10 +101,8 @@ export default function HistoricoCobrancasPage() {
     let list = cobrancas;
     const buscaNorm = busca.trim();
     if (buscaNorm) {
-      const norm = buscaNorm.toLowerCase();
-      list = list.filter((c) =>
-        (c.cliente_nome || "").toLowerCase().includes(norm)
-      );
+      const norm = normalizaTexto(buscaNorm);
+      list = list.filter((c) => normalizaTexto(c.cliente_nome || "").includes(norm));
     }
 
     return list;
