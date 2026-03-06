@@ -1466,9 +1466,9 @@ export default function DashboardPage() {
                 </strong>
               </span>
             </div>
-            <div className="overflow-x-auto border rounded mt-4">
+            <div className="overflow-auto max-h-[calc(100vh-16rem)] border rounded mt-4">
               <table className="w-full text-sm">
-                <thead className="bg-slate-100">
+                <thead className="sticky top-0 z-10 bg-slate-100 shadow-sm">
                   <tr>
                     <th
                       className="text-left p-2 cursor-pointer hover:bg-slate-200 select-none"

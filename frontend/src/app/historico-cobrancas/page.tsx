@@ -111,7 +111,7 @@ export default function HistoricoCobrancasPage() {
   // Carrega cobranças respeitando visibilidade (grupo/empresa) e filtro de busca
   useEffect(() => {
     if (!visibilidadeCarregada) return;
-    setLoading(true);
+    setLoading((prev) => (cobrancas.length === 0 ? true : prev));
     let cancelled = false;
     (async () => {
       const buscaNorm = buscaDebounced.trim();
@@ -201,6 +201,7 @@ export default function HistoricoCobrancasPage() {
           : c
       )
     );
+    setRefreshKey((k) => k + 1);
   }
 
   function iniciarEditarObs(c: Cobranca) {
@@ -220,7 +221,8 @@ export default function HistoricoCobrancasPage() {
     );
   }
 
-  if (loading) {
+  // Só mostra tela de "Carregando..." na carga inicial (sem dados). Em buscas, mantém formulário para o cursor não sair do campo.
+  if (loading && cobrancas.length === 0) {
     return (
       <div>
         <h1 className="text-2xl font-bold text-slate-800">Histórico de cobranças por cliente</h1>
@@ -257,9 +259,9 @@ export default function HistoricoCobrancasPage() {
         {cobrancas.length === 0 ? (
           <p className="text-slate-500">Nenhuma cobrança encontrada.</p>
         ) : (
-          <div className="overflow-x-auto border rounded bg-white">
+          <div className="overflow-auto max-h-[calc(100vh-16rem)] border rounded bg-white">
             <table className="w-full text-sm">
-              <thead className="bg-slate-100">
+              <thead className="sticky top-0 z-10 bg-slate-100 shadow-sm">
                 <tr>
                   <th className="text-left p-2">Grupo</th>
                   <th className="text-left p-2">Cliente</th>
