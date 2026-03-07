@@ -31,6 +31,7 @@ from sync_categorias_supabase import executar_sync_categorias_empresas
 from sync_movimentos_supabase import executar_sync_movimentos_empresas
 from sync_pagamentos_realizados_supabase import executar_sync_pagamentos_realizados_empresas
 from sync_recebimentos_supabase import executar_sync_recebimentos_empresas
+from sync_titulos_pagos_a_vencer_supabase import executar_sync_titulos_pagos_a_vencer_empresas
 from scheduler_status import limpar_em_execucao, registrar_em_execucao
 
 # Carregar .env da raiz do projeto (fonte única de ENCRYPTION_KEY para o scheduler)
@@ -212,7 +213,7 @@ def listar_jobs_agora(supabase, ignorar_horario: bool = False) -> list[tuple[str
             continue
 
         api_tipos_raw = a.get("api_tipos") or ["clientes"]
-        api_tipos = [t for t in api_tipos_raw if t in ("clientes", "categorias", "movimento_financeiro", "pagamentos_realizados", "recebimentos_omie")]
+        api_tipos = [t for t in api_tipos_raw if t in ("clientes", "categorias", "movimento_financeiro", "movimentos_geral", "pagamentos_realizados", "recebimentos_omie")]
         if not api_tipos:
             api_tipos = ["clientes"]
 
@@ -313,7 +314,11 @@ def worker():
                         n = executar_sync_recebimentos_empresas(supabase, empresas, label)
                         total += n
                         print(f"  [{label}] Recebimentos Omie: {n} registros.", flush=True)
-                    if "clientes" in api_tipos or "categorias" in api_tipos or "movimento_financeiro" in api_tipos or "pagamentos_realizados" in api_tipos or "recebimentos_omie" in api_tipos:
+                    if "movimentos_geral" in api_tipos:
+                        n = executar_sync_titulos_pagos_a_vencer_empresas(supabase, empresas, label)
+                        total += n
+                        print(f"  [{label}] Movimentos Geral (Títulos pagos / Títulos a vencer): {n} registros.", flush=True)
+                    if "clientes" in api_tipos or "categorias" in api_tipos or "movimento_financeiro" in api_tipos or "movimentos_geral" in api_tipos or "pagamentos_realizados" in api_tipos or "recebimentos_omie" in api_tipos:
                         print(f"  [{label}] Total: {total} registros.", flush=True)
             except Exception as e:
                 print(f"  [{label}] Erro: {e}", flush=True)
@@ -368,7 +373,7 @@ def ciclo(ignorar_horario: bool = False):
                 jobs_unicos[work_key] = (label, gids, eids, apis, cur_de, cur_ate)
 
     jobs_finais = []
-    ordem_apis = ("clientes", "categorias", "movimento_financeiro", "pagamentos_realizados", "recebimentos_omie")
+    ordem_apis = ("clientes", "categorias", "movimento_financeiro", "movimentos_geral", "pagamentos_realizados", "recebimentos_omie")
     for work_key, (label, gids, eids, apis_set, data_de, data_ate) in jobs_unicos.items():
         api_tipos = [t for t in ordem_apis if t in apis_set]
         if not api_tipos:

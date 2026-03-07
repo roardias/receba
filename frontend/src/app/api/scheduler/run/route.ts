@@ -86,8 +86,8 @@ export async function GET(req: NextRequest) {
 
     const lista = (ags || []) as Ag[];
 
-    // 2) Normalizar e filtrar agendamentos que batem neste minuto (qualquer api_tipo: clientes, categorias, movimento_financeiro, pagamentos_realizados, recebimentos_omie)
-    const TIPOS_SYNC = ["clientes", "categorias", "movimento_financeiro", "pagamentos_realizados", "recebimentos_omie"];
+    // 2) Normalizar e filtrar agendamentos que batem neste minuto (qualquer api_tipo: clientes, categorias, movimento_financeiro, movimentos_geral, pagamentos_realizados, recebimentos_omie)
+    const TIPOS_SYNC = ["clientes", "categorias", "movimento_financeiro", "movimentos_geral", "pagamentos_realizados", "recebimentos_omie"];
     const alvos: { empresa_id: string; ag_id: string }[] = [];
 
     for (const ag of lista) {

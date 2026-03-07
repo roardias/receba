@@ -19,6 +19,7 @@ const APIS_DISPONIVEIS = [
   { id: "clientes", label: "Cadastro (clientes)" },
   { id: "categorias", label: "Categorias" },
   { id: "movimento_financeiro", label: "Movimento Financeiro" },
+  { id: "movimentos_geral", label: "Movimentos Geral (Títulos pagos / Títulos a vencer)" },
   { id: "pagamentos_realizados", label: "Pagamentos Realizados" },
   { id: "recebimentos_omie", label: "Recebimentos Omie" },
 ];
