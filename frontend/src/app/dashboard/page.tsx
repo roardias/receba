@@ -288,7 +288,13 @@ function buildRelatorioHtml(
         )
         .join("");
 
-      const tabelaHtml = `<table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse;width:100%;font-size:14px"><thead><tr style="background:#e2e8f0"><th>Emissão</th><th>Vencimento</th><th>Dias</th><th>NF</th><th>Categoria</th><th style="text-align:right">Val. Pago</th><th style="text-align:right">Val. Aberto</th><th style="text-align:right">Val. Atualizado</th></tr></thead><tbody>${trs}</tbody></table>`;
+      const totalRow = `<tr style="font-weight:bold;background:#f1f5f9"><td colspan="5" style="text-align:right">Total:</td><td style="text-align:right">${escapeHtml(
+        formatarMoeda(valPago)
+      )}</td><td style="text-align:right">${escapeHtml(formatarMoeda(valAberto))}</td><td style="text-align:right">${escapeHtml(
+        formatarMoeda(valAtualizado)
+      )}</td></tr>`;
+
+      const tabelaHtml = `<table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse;width:100%;font-size:14px"><thead><tr style="background:#e2e8f0"><th>Emissão</th><th>Vencimento</th><th>Dias</th><th>NF</th><th>Categoria</th><th style="text-align:right">Val. Pago</th><th style="text-align:right">Val. Aberto</th><th style="text-align:right">Val. Atualizado</th></tr></thead><tbody>${trs}</tbody><tfoot>${totalRow}</tfoot></table>`;
 
       return `<div style="margin-bottom:24px;page-break-inside:avoid;break-inside:avoid"><h3 style="margin:0 0 8px 0;font-size:15px;color:#1e293b">${escapeHtml(label)}</h3>${tabelaHtml}</div>`;
     }).join("");
