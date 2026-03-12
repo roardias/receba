@@ -580,7 +580,8 @@ export default function DashboardPage() {
   const dadosAgrupados: GrupoItem[] = (() => {
     const map = new Map<string, GrupoItem>();
     for (const r of dadosVisiveis) {
-      const key = `${r.empresa}|${r.nome_fantasia ?? ""}|${r.codigo_nome_fantasia ?? ""}`;
+      // Agrupar somente por cliente/código, sem segregar por empresa
+      const key = `${r.nome_fantasia ?? ""}|${r.codigo_nome_fantasia ?? ""}`;
       const existing = map.get(key);
       const vp = r.ValPago_validado ?? 0;
       const va = r.ValAberto_validado ?? 0;
@@ -1773,6 +1774,7 @@ export default function DashboardPage() {
                       <table className="w-full text-sm">
                         <thead className="bg-slate-100">
                           <tr>
+                            <th className="text-left p-2">Empresa</th>
                             <th className="text-left p-2">Emissão</th>
                             <th className="text-left p-2">Vencimento</th>
                             <th className="text-left p-2">Dias</th>
@@ -1786,6 +1788,7 @@ export default function DashboardPage() {
                         <tbody>
                           {detalheRows.map((r, i) => (
                             <tr key={`${r.movimento_id}-${i}`} className="border-t">
+                              <td className="p-2">{r.empresa || "—"}</td>
                               <td className="p-2">{formatarData(r.det_ddtemissao)}</td>
                               <td className="p-2">{formatarData(r.det_ddtprevisao)}</td>
                               <td className="p-2">{r.qtde_dias ?? "—"}</td>
@@ -1812,6 +1815,7 @@ export default function DashboardPage() {
                           <tr>
                             <th className="text-left p-2">Cód.</th>
                             <th className="text-left p-2">Cliente</th>
+                            <th className="text-left p-2">Empresa</th>
                             <th className="text-left p-2">Emissão</th>
                             <th className="text-left p-2">Vencimento</th>
                             <th className="text-left p-2">Dias</th>
@@ -1827,6 +1831,7 @@ export default function DashboardPage() {
                             <tr key={`${r.movimento_id}-${i}`} className="border-t">
                               <td className="p-2">{r.codigo_nome_fantasia || "—"}</td>
                               <td className="p-2 max-w-[200px] truncate">{r.nome_fantasia || "—"}</td>
+                              <td className="p-2">{r.empresa || "—"}</td>
                               <td className="p-2">{formatarData(r.det_ddtemissao)}</td>
                               <td className="p-2">{formatarData(r.det_ddtprevisao)}</td>
                               <td className="p-2">{r.qtde_dias ?? "—"}</td>
