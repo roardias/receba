@@ -391,6 +391,8 @@ export default function DashboardPage() {
   const [statusDashboard, setStatusDashboard] = useState<Record<string, { status: string; data_negociado: string | null }>>({});
   /** Data do último contato (cobranças realizadas) por chave "cod|cnpj" (apenas dígitos no cnpj). */
   const [ultimoContatoPorChave, setUltimoContatoPorChave] = useState<Record<string, string>>({});
+  /** Versão dos contatos de cobrança (incrementada após registrar ligação/WhatsApp/e-mail para forçar recarga). */
+  const [contatosVersion, setContatosVersion] = useState(0);
 
   function handleSort(col: SortCol) {
     setSortCol(col);
@@ -549,7 +551,7 @@ export default function DashboardPage() {
       });
       setUltimoContatoPorChave(map);
     });
-  }, [grupoId, empresaSelecionada?.id]);
+  }, [grupoId, empresaSelecionada?.id, contatosVersion]);
 
   function handleGrupoChange(e: React.ChangeEvent<HTMLSelectElement>) {
     setGrupoId(e.target.value);
@@ -1088,6 +1090,8 @@ export default function DashboardPage() {
       setEmailErro(j.error || res.statusText);
     } else {
       setEmailSucesso(j.message || "E-mail(s) enviado(s).");
+      // Forçar recarga da informação de último contato após registrar e-mail em cobrancas_realizadas
+      setContatosVersion((v) => v + 1);
     }
     setEnviandoEmail(false);
   }
@@ -1183,6 +1187,8 @@ export default function DashboardPage() {
       const { error } = await supabase.from("cobrancas_realizadas").insert(rows);
       if (error) throw error;
       setLigacaoSucesso("Ligação registrada.");
+      // Atualizar informação de último contato após registrar a ligação
+      setContatosVersion((v) => v + 1);
       setTimeout(() => setLigacaoPopupAberto(false), 1500);
     } catch (e) {
       setLigacaoSucesso(null);
@@ -1235,6 +1241,8 @@ export default function DashboardPage() {
       const { error } = await supabase.from("cobrancas_realizadas").insert(rows);
       if (error) throw error;
       setWhatsappSucesso("WhatsApp registrado.");
+      // Atualizar informação de último contato após registrar o WhatsApp
+      setContatosVersion((v) => v + 1);
       setTimeout(() => setWhatsappPopupAberto(false), 1500);
     } catch (e) {
       setWhatsappSucesso(null);
