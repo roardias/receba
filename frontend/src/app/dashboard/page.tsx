@@ -64,7 +64,20 @@ function valorAtualizado(valAberto: number | null, qtdeDias: number | null): num
 
 function formatarData(val: string | null) {
   if (!val) return "—";
-  return new Date(val).toLocaleDateString("pt-BR");
+  const s = val.trim();
+  // Quando vem do Postgres como DATE, o formato é "YYYY-MM-DD" (sem timezone).
+  // Para evitar o shift de fuso horário do new Date(), formatamos manualmente.
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (m) {
+    const [, y, mo, d] = m;
+    return `${d}/${mo}/${y}`;
+  }
+  // Fallback para valores com horário (ISO completo), se aparecerem.
+  const dt = new Date(s);
+  if (!isNaN(dt.getTime())) {
+    return dt.toLocaleDateString("pt-BR");
+  }
+  return s;
 }
 
 const ASSUNTO_PADRAO = "Informações importantes sobre seus serviços na Alldax • Grupo 3SA";
