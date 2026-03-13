@@ -573,7 +573,7 @@ export default function DashboardPage() {
   function aposRegistrarCobranca() {
     setContatosVersion((v) => v + 1);
     setRefreshTrigger((t) => t + 1);
-    supabase.rpc("refresh_dashboard_receber").catch(() => {});
+    void supabase.rpc("refresh_dashboard_receber").then(() => {}, () => {});
   }
 
   function handleGrupoChange(e: React.ChangeEvent<HTMLSelectElement>) {
