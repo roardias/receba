@@ -17,34 +17,45 @@ export default function Basal2026Page() {
   const [preview, setPreview] = useState<LinhaBasal[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [importando, setImportando] = useState(false);
+   const [status, setStatus] = useState<string | null>(null);
+   const [progresso, setProgresso] = useState<number>(0);
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     setErro(null);
     setPreview(null);
+    setStatus(null);
+    setProgresso(0);
     const file = e.target.files?.[0];
     if (!file) return;
     e.target.value = "";
 
     try {
+      setStatus("Lendo e validando planilha...");
+      setProgresso(10);
       const data = await file.arrayBuffer();
       const wb = XLSX.read(data, { type: "array" });
 
       const sheetName = wb.SheetNames.find((n) => n.trim().toLowerCase() === "basal 2026 v1".toLowerCase());
       if (!sheetName) {
         setErro('A aba "BASAL 2026 V1" não foi encontrada na planilha.');
+        setStatus(null);
         return;
       }
 
       const sheet = wb.Sheets[sheetName];
-      const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+      // raw: false faz o XLSX usar o valor "formatado" da célula (ex.: "16.390.536/0001-09"),
+      // o que permite extrair corretamente todos os dígitos do CNPJ.
+      const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false });
       if (rows.length < 3) {
         setErro("Planilha sem dados para importar (é esperado cabeçalho na linha 2 e dados a partir da linha 3).");
+        setStatus(null);
         return;
       }
 
       const linhas: LinhaBasal[] = [];
       const problemas: string[] = [];
 
+      setProgresso(30);
       for (let i = 2; i < rows.length; i++) {
         const row = rows[i] || [];
         const grupoRaw = String(row[0] ?? "").trim();
@@ -84,6 +95,7 @@ export default function Basal2026Page() {
               }`
             : "Nenhuma linha válida encontrada na planilha."
         );
+        setStatus(null);
         return;
       }
 
@@ -96,9 +108,13 @@ export default function Basal2026Page() {
       }
 
       setPreview(linhas);
+      setStatus("Pré-visualização pronta. Revise e clique em Confirmar importação.");
+      setProgresso(70);
     } catch (err) {
       console.error(err);
       setErro(err instanceof Error ? err.message : "Erro ao processar planilha");
+      setStatus(null);
+      setProgresso(0);
     }
   }
 
@@ -107,6 +123,8 @@ export default function Basal2026Page() {
     setImportando(true);
     setErro(null);
     try {
+      setStatus("Limpando tabela empresas_grupo_basal...");
+      setProgresso(10);
       const payload = preview.map((l) => ({
         grupo: l.grupo,
         cnpj: l.cnpj,
@@ -114,13 +132,25 @@ export default function Basal2026Page() {
 
       // Estratégia simples: limpar e inserir tudo de novo
       await supabase.from("empresas_grupo_basal").delete().neq("cnpj", ""); // filtro qualquer só para permitir delete-all
-      const { error } = await supabase.from("empresas_grupo_basal").insert(payload);
-      if (error) throw error;
+      setStatus("Gravando registros importados...");
+
+      const batchSize = 500;
+      for (let i = 0; i < payload.length; i += batchSize) {
+        const batch = payload.slice(i, i + batchSize);
+        const { error } = await supabase.from("empresas_grupo_basal").insert(batch);
+        if (error) throw error;
+        const progressLocal = 10 + Math.round(((i + batch.length) / payload.length) * 80);
+        setProgresso(progressLocal);
+      }
 
       setPreview(null);
+      setStatus("Importação concluída com sucesso.");
+      setProgresso(100);
     } catch (err) {
       console.error(err);
       setErro(err instanceof Error ? err.message : "Erro ao salvar dados no Supabase");
+      setStatus(null);
+      setProgresso(0);
     } finally {
       setImportando(false);
     }
@@ -140,6 +170,18 @@ export default function Basal2026Page() {
           Selecionar planilha
           <input type="file" accept=".xlsx,.xls" onChange={handleFile} className="hidden" />
         </label>
+
+        {(status || importando || progresso > 0) && (
+          <div className="space-y-1 max-w-md">
+            {status && <p className="text-xs text-slate-600">{status}</p>}
+            <div className="w-full h-2 bg-slate-200 rounded overflow-hidden">
+              <div
+                className="h-2 bg-slate-700 transition-all"
+                style={{ width: `${Math.min(Math.max(progresso, 0), 100)}%` }}
+              />
+            </div>
+          </div>
+        )}
 
         {erro && (
           <pre className="whitespace-pre-wrap text-red-700 bg-red-50 px-4 py-2 rounded text-sm">{erro}</pre>
