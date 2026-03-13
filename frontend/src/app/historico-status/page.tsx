@@ -6,13 +6,15 @@ import { useAuth } from "@/contexts/AuthContext";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 
-const STATUS_LABELS: Record<string, string> = {
+/** Fallback quando a tabela status_cobranca ainda não foi carregada. */
+const FALLBACK_STATUS_LABELS: Record<string, string> = {
   em_cobranca: "Em cobrança",
   negociado_pagamento: "Negociado pagamento",
   nao_cumpriu_promessa_pagamento: "Não cumpriu promessa de pagamento",
   bloqueado: "Bloqueado",
   protestado: "Protestado",
   em_acao_judicial: "Em ação judicial",
+  suspenso_temporariamente: "Suspenso Temporariamente",
 };
 
 type LogRow = {
@@ -44,11 +46,6 @@ function formatarData(val: string | null) {
   });
 }
 
-function labelStatus(s: string | null): string {
-  if (!s) return "—";
-  return STATUS_LABELS[s] ?? s;
-}
-
 export default function HistoricoStatusPage() {
   const { hasPermissao } = useAuth();
   const podeAcessar = hasPermissao("menu_historico_cobrancas");
@@ -58,6 +55,28 @@ export default function HistoricoStatusPage() {
   const [dataInicio, setDataInicio] = useState("");
   const [dataFim, setDataFim] = useState("");
   const [busca, setBusca] = useState("");
+  /** Labels dos status (tabela status_cobranca). */
+  const [statusLabels, setStatusLabels] = useState<Record<string, string>>(FALLBACK_STATUS_LABELS);
+
+  const labelStatus = (s: string | null): string => {
+    if (!s) return "—";
+    return statusLabels[s] ?? s;
+  };
+
+  useEffect(() => {
+    supabase
+      .from("status_cobranca")
+      .select("codigo, label")
+      .then(({ data }) => {
+        if (data?.length) {
+          const map: Record<string, string> = {};
+          data.forEach((r: { codigo: string; label: string }) => {
+            map[r.codigo] = r.label;
+          });
+          setStatusLabels(map);
+        }
+      });
+  }, []);
 
   useEffect(() => {
     if (!podeAcessar) {

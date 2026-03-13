@@ -27,14 +27,16 @@ type DashboardRow = {
   grupo_empresas: string | null;
 };
 
-const STATUS_OPCOES = [
+/** Fallback quando a tabela status_cobranca ainda não foi carregada ou não existe. */
+const FALLBACK_STATUS_OPCOES: { value: string; label: string }[] = [
   { value: "em_cobranca", label: "Em cobrança" },
   { value: "negociado_pagamento", label: "Negociado pagamento" },
   { value: "nao_cumpriu_promessa_pagamento", label: "Não cumpriu promessa de pagamento" },
   { value: "bloqueado", label: "Bloqueado" },
   { value: "protestado", label: "Protestado" },
   { value: "em_acao_judicial", label: "Em ação judicial" },
-] as const;
+  { value: "suspenso_temporariamente", label: "Suspenso Temporariamente" },
+];
 
 function formatarMoeda(val: number | null) {
   if (val == null) return "—";
@@ -404,6 +406,20 @@ export default function DashboardPage() {
   const [allowedGrupoIds, setAllowedGrupoIds] = useState<Set<string>>(new Set());
   const [allowedEmpresaIds, setAllowedEmpresaIds] = useState<Set<string>>(new Set());
   const [allowedCategorias, setAllowedCategorias] = useState<Set<string>>(new Set());
+  /** Tipos de status de cobrança (tabela status_cobranca). */
+  const [statusOpcoes, setStatusOpcoes] = useState<{ value: string; label: string }[]>([]);
+
+  useEffect(() => {
+    supabase
+      .from("status_cobranca")
+      .select("codigo, label, ordem")
+      .order("ordem", { ascending: true })
+      .then(({ data }) => {
+        if (data?.length) setStatusOpcoes(data.map((r) => ({ value: r.codigo, label: r.label })));
+      });
+  }, []);
+
+  const STATUS_OPCOES = statusOpcoes.length ? statusOpcoes : FALLBACK_STATUS_OPCOES;
 
   useEffect(() => {
     (async () => {
@@ -552,6 +568,13 @@ export default function DashboardPage() {
       setUltimoContatoPorChave(map);
     });
   }, [grupoId, empresaSelecionada?.id, contatosVersion]);
+
+  /** Após inserir ligação, WhatsApp ou e-mail: atualiza "Data último contato" e refresh da view. */
+  function aposRegistrarCobranca() {
+    setContatosVersion((v) => v + 1);
+    setRefreshTrigger((t) => t + 1);
+    supabase.rpc("refresh_dashboard_receber").catch(() => {});
+  }
 
   function handleGrupoChange(e: React.ChangeEvent<HTMLSelectElement>) {
     setGrupoId(e.target.value);
@@ -1090,8 +1113,7 @@ export default function DashboardPage() {
       setEmailErro(j.error || res.statusText);
     } else {
       setEmailSucesso(j.message || "E-mail(s) enviado(s).");
-      // Forçar recarga da informação de último contato após registrar e-mail em cobrancas_realizadas
-      setContatosVersion((v) => v + 1);
+      aposRegistrarCobranca();
     }
     setEnviandoEmail(false);
   }
@@ -1187,8 +1209,7 @@ export default function DashboardPage() {
       const { error } = await supabase.from("cobrancas_realizadas").insert(rows);
       if (error) throw error;
       setLigacaoSucesso("Ligação registrada.");
-      // Atualizar informação de último contato após registrar a ligação
-      setContatosVersion((v) => v + 1);
+      aposRegistrarCobranca();
       setTimeout(() => setLigacaoPopupAberto(false), 1500);
     } catch (e) {
       setLigacaoSucesso(null);
@@ -1241,8 +1262,7 @@ export default function DashboardPage() {
       const { error } = await supabase.from("cobrancas_realizadas").insert(rows);
       if (error) throw error;
       setWhatsappSucesso("WhatsApp registrado.");
-      // Atualizar informação de último contato após registrar o WhatsApp
-      setContatosVersion((v) => v + 1);
+      aposRegistrarCobranca();
       setTimeout(() => setWhatsappPopupAberto(false), 1500);
     } catch (e) {
       setWhatsappSucesso(null);
