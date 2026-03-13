@@ -75,12 +75,16 @@ export default function Basal2026Page() {
         }
 
         if (!cnpjDigits) {
-          problemas.push(`Linha ${i + 1}: CNPJ vazio.`);
+          problemas.push(`Linha ${i + 1}: CNPJ vazio (valor original: "${cnpjRaw}").`);
           continue;
         }
 
+        // Após remover espaços e qualquer caractere que não seja dígito,
+        // o CNPJ DEVE ter exatamente 14 dígitos.
         if (cnpjDigits.length !== 14) {
-          problemas.push(`Linha ${i + 1}: CNPJ deve ter 14 dígitos após remover máscara (atual: ${cnpjDigits.length}).`);
+          problemas.push(
+            `Linha ${i + 1}: CNPJ deve ter 14 dígitos após remover máscara (atual: ${cnpjDigits.length}). Valor original: "${cnpjRaw}", valor numérico: "${cnpjDigits}".`
+          );
           continue;
         }
 
