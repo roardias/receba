@@ -14,6 +14,8 @@ const pathConcimed = (path: string) =>
   path === "/concimed/pagamentos-medicos" || (path ?? "").startsWith("/concimed/");
 const pathDividendos = (path: string) =>
   (path ?? "").startsWith("/dividendos-2025/");
+const pathImportacoes = (path: string) =>
+  path === "/acessorias" || path === "/basal-2026";
 const pathMinhaEmpresa = (path: string) => path === "/configuracoes/minha-empresa";
 const pathMeuUsuario = (path: string) => path === "/configuracoes/meu-usuario";
 const pathUsuarios = (path: string) => path === "/configuracoes/usuarios";
@@ -29,6 +31,7 @@ export default function Sidebar({ open, onToggle }: SidebarProps) {
 
   const [configuracoesAberto, setConfiguracoesAberto] = useState(false);
   const [concimedAberto, setConcimedAberto] = useState(false);
+  const [importacoesAberto, setImportacoesAberto] = useState(false);
   const [empresasInternasAberto, setEmpresasInternasAberto] = useState(false);
   const [apiAberto, setApiAberto] = useState(false);
   /** null = carregando; true/false = usuário tem acesso à empresa Concimed (visibilidade no dashboard) */
@@ -70,6 +73,9 @@ export default function Sidebar({ open, onToggle }: SidebarProps) {
     }
     if (pathDividendos(pathname ?? "")) {
       setConcimedAberto(true);
+    }
+    if (pathImportacoes(pathname ?? "")) {
+      setImportacoesAberto(true);
     }
     if (
       pathInEmpresasInternas(pathname ?? "") ||
@@ -141,7 +147,7 @@ export default function Sidebar({ open, onToggle }: SidebarProps) {
               Relação inadimplentes
             </Link>
           </li>
-              {hasPermissao("menu_historico_cobrancas") && (
+          {hasPermissao("menu_historico_cobrancas") && (
             <>
               <li>
                 <Link
@@ -166,16 +172,40 @@ export default function Sidebar({ open, onToggle }: SidebarProps) {
             </>
           )}
           {hasPermissao("menu_acessorias") && (
-            <li>
-              <Link
-                href="/acessorias"
-                className={`block px-3 py-2 rounded ${
-                  pathname === "/acessorias" ? "bg-slate-600" : "hover:bg-slate-700"
-                }`}
+            <div className="mt-6">
+              <button
+                type="button"
+                onClick={() => setImportacoesAberto((v) => !v)}
+                className="flex items-center justify-between w-full px-3 py-2 rounded hover:bg-slate-700 text-left text-slate-300"
               >
-                Importar cadastro Acessorias
-              </Link>
-            </li>
+                <span className="text-slate-400 text-xs uppercase">Importações</span>
+                <span className="text-slate-500">{importacoesAberto ? "▼" : "▶"}</span>
+              </button>
+              {importacoesAberto && (
+                <ul className="pl-2 mt-1 space-y-0.5">
+                  <li>
+                    <Link
+                      href="/acessorias"
+                      className={`block px-3 py-2 rounded text-sm ${
+                        isActive("/acessorias") ? "bg-slate-600" : "hover:bg-slate-700"
+                      }`}
+                    >
+                      Cadastro Acessorias
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      href="/basal-2026"
+                      className={`block px-3 py-2 rounded text-sm ${
+                        isActive("/basal-2026") ? "bg-slate-600" : "hover:bg-slate-700"
+                      }`}
+                    >
+                      Basal 2026
+                    </Link>
+                  </li>
+                </ul>
+              )}
+            </div>
           )}
         </ul>
 
