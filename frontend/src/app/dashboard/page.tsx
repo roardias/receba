@@ -534,10 +534,17 @@ export default function DashboardPage() {
     });
   }, [dadosVisiveis]);
 
+  /** Chave para casar cliente da view com cobrancas_realizadas (cod_cliente + cnpj). */
   function chaveContato(cod: string | null, cnpjCpf: string | null): string {
     const codNorm = (cod ?? "").trim().toLowerCase();
     const cnpjNorm = (cnpjCpf ?? "").replace(/\D/g, "");
     return `${codNorm}|${cnpjNorm}`;
+  }
+
+  /** Chave só por CNPJ (fallback quando o cliente não tem código na view, ex.: Tax All). */
+  function chaveContatoSóCnpj(cnpjCpf: string | null): string {
+    const cnpjNorm = (cnpjCpf ?? "").replace(/\D/g, "");
+    return `|${cnpjNorm}`;
   }
 
   useEffect(() => {
@@ -559,11 +566,18 @@ export default function DashboardPage() {
       }
       const map: Record<string, string> = {};
       (data || []).forEach((r: { cod_cliente: string | null; cnpj_cpf: string | null; data_contato: string | null; created_at: string }) => {
-        const key = chaveContato(r.cod_cliente, r.cnpj_cpf);
         const dataRef = r.data_contato || (r.created_at ? r.created_at.slice(0, 10) : null);
         if (!dataRef) return;
+        const key = chaveContato(r.cod_cliente, r.cnpj_cpf);
         const prev = map[key];
         if (!prev || dataRef > prev) map[key] = dataRef;
+        // Fallback por CNPJ: clientes sem código na view (ex. Tax All) têm codigo_nome_fantasia null; em cobranças pode vir cod_cliente do nome "814 - Tax All". Guardar também por "|cnpj" para casar.
+        const cnpjNorm = (r.cnpj_cpf ?? "").replace(/\D/g, "");
+        if (cnpjNorm) {
+          const keySóCnpj = chaveContatoSóCnpj(r.cnpj_cpf);
+          const prevCnpj = map[keySóCnpj];
+          if (!prevCnpj || dataRef > prevCnpj) map[keySóCnpj] = dataRef;
+        }
       });
       setUltimoContatoPorChave(map);
     });
@@ -754,9 +768,8 @@ export default function DashboardPage() {
         const statusTexto = dataNeg ? `${statusLabel} (${dataNeg})` : statusLabel;
         const dataPrevisao = r.det_ddtprevisao ? new Date(r.det_ddtprevisao).toLocaleDateString("pt-BR") : "";
         const keyContato = chaveContato(r.codigo_nome_fantasia, r.cnpj_cpf);
-        const dataUltimoContato = ultimoContatoPorChave[keyContato]
-          ? new Date(ultimoContatoPorChave[keyContato]).toLocaleDateString("pt-BR", { dateStyle: "short" })
-          : "";
+        const isoContato = ultimoContatoPorChave[keyContato] ?? (r.cnpj_cpf ? ultimoContatoPorChave[chaveContatoSóCnpj(r.cnpj_cpf)] : undefined);
+        const dataUltimoContato = isoContato ? new Date(isoContato).toLocaleDateString("pt-BR", { dateStyle: "short" }) : "";
         const valAtualizado = valorAtualizado(r.ValAberto_validado, r.qtde_dias);
         data.push([
           r.nome_fantasia ?? "",
@@ -1629,7 +1642,7 @@ export default function DashboardPage() {
                         <td className="p-2" onClick={handleClienteClick}>
                           {(() => {
                             const key = chaveContato(g.codigo, g.rows[0]?.cnpj_cpf ?? null);
-                            const iso = ultimoContatoPorChave[key];
+                            const iso = ultimoContatoPorChave[key] ?? (g.rows[0]?.cnpj_cpf ? ultimoContatoPorChave[chaveContatoSóCnpj(g.rows[0].cnpj_cpf)] : undefined);
                             return iso ? new Date(iso).toLocaleDateString("pt-BR", { dateStyle: "short" }) : "—";
                           })()}
                         </td>
