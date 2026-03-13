@@ -43,8 +43,7 @@ export default function Basal2026Page() {
       }
 
       const sheet = wb.Sheets[sheetName];
-      // raw: false faz o XLSX usar o valor "formatado" da célula (ex.: "16.390.536/0001-09"),
-      // o que permite extrair corretamente todos os dígitos do CNPJ.
+      // raw: false faz o XLSX usar preferencialmente o valor "formatado" da célula.
       const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false });
       if (rows.length < 3) {
         setErro("Planilha sem dados para importar (é esperado cabeçalho na linha 2 e dados a partir da linha 3).");
@@ -59,7 +58,11 @@ export default function Basal2026Page() {
       for (let i = 2; i < rows.length; i++) {
         const row = rows[i] || [];
         const grupoRaw = String(row[0] ?? "").trim();
-        const cnpjRaw = String(row[4] ?? "").trim();
+
+        // Ler o CNPJ diretamente da célula da coluna E (índice 4), priorizando o texto formatado (.w)
+        const cellAddr = XLSX.utils.encode_cell({ r: i, c: 4 });
+        const cell = (sheet as any)[cellAddr];
+        const cnpjRaw = cell ? String((cell.w ?? cell.v) ?? "").trim() : "";
         const cnpjDigits = somenteNumeros(cnpjRaw);
 
         if (!grupoRaw && !cnpjRaw) {
