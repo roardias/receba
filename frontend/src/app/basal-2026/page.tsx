@@ -154,22 +154,29 @@ export default function Basal2026Page() {
     setImportando(true);
     setErro(null);
     try {
-      setStatus("Limpando tabela empresas_grupo_basal...");
-      setProgresso(10);
-      const payload = preview.map((l) => ({
-        grupo: l.grupo,
-        cnpj: l.cnpj,
-      }));
+      // Deduplicar por (grupo, cnpj) para evitar conflito no upsert
+      const seen = new Set<string>();
+      const payload: { grupo: string; cnpj: string }[] = [];
+      for (const l of preview) {
+        const key = `${l.grupo}|${l.cnpj}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        payload.push({ grupo: l.grupo, cnpj: l.cnpj });
+      }
 
-      // Estratégia simples: limpar e inserir tudo de novo
-      await supabase.from("empresas_grupo_basal").delete().neq("cnpj", ""); // filtro qualquer só para permitir delete-all
-      setStatus("Gravando registros importados...");
+      setStatus("Gravando registros na tabela empresas_grupo_basal...");
+      setProgresso(10);
 
       const batchSize = 500;
       for (let i = 0; i < payload.length; i += batchSize) {
         const batch = payload.slice(i, i + batchSize);
-        const { error } = await supabase.from("empresas_grupo_basal").insert(batch);
-        if (error) throw error;
+        const { error } = await supabase
+          .from("empresas_grupo_basal")
+          .upsert(batch, { onConflict: "grupo,cnpj", ignoreDuplicates: false });
+        if (error) {
+          const msg = [error.message, error.details, error.hint].filter(Boolean).join(" | ");
+          throw new Error(msg || "Erro Supabase");
+        }
         const progressLocal = 10 + Math.round(((i + batch.length) / payload.length) * 80);
         setProgresso(progressLocal);
       }
@@ -179,7 +186,8 @@ export default function Basal2026Page() {
       setProgresso(100);
     } catch (err) {
       console.error(err);
-      setErro(err instanceof Error ? err.message : "Erro ao salvar dados no Supabase");
+      const msg = err instanceof Error ? err.message : "Erro ao salvar dados no Supabase";
+      setErro(msg);
       setStatus(null);
       setProgresso(0);
     } finally {
