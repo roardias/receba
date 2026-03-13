@@ -12,6 +12,7 @@ type DashboardRow = {
   movimento_id: string;
   chave_cliente: string | null;
   empresa: string;
+  data_ultimo_contato: string | null;
   det_cnumdocfiscal: string | null;
   det_ddtemissao: string | null;
   det_ddtprevisao: string | null;
@@ -391,10 +392,6 @@ export default function DashboardPage() {
   const [sortAsc, setSortAsc] = useState(false);
   const [statusPorChave, setStatusPorChave] = useState<Record<string, { status: string; data_negociado: string | null }>>({});
   const [statusDashboard, setStatusDashboard] = useState<Record<string, { status: string; data_negociado: string | null }>>({});
-  /** Data do último contato (cobranças realizadas) por chave "cod|cnpj" (apenas dígitos no cnpj). */
-  const [ultimoContatoPorChave, setUltimoContatoPorChave] = useState<Record<string, string>>({});
-  /** Versão dos contatos de cobrança (incrementada após registrar ligação/WhatsApp/e-mail para forçar recarga). */
-  const [contatosVersion, setContatosVersion] = useState(0);
 
   function handleSort(col: SortCol) {
     setSortCol(col);
@@ -534,58 +531,8 @@ export default function DashboardPage() {
     });
   }, [dadosVisiveis]);
 
-  /** Chave para casar cliente da view com cobrancas_realizadas (cod_cliente + cnpj). */
-  function chaveContato(cod: string | null, cnpjCpf: string | null): string {
-    const codNorm = (cod ?? "").trim().toLowerCase();
-    const cnpjNorm = (cnpjCpf ?? "").replace(/\D/g, "");
-    return `${codNorm}|${cnpjNorm}`;
-  }
-
-  /** Chave só por CNPJ (fallback quando o cliente não tem código na view, ex.: Tax All). */
-  function chaveContatoSóCnpj(cnpjCpf: string | null): string {
-    const cnpjNorm = (cnpjCpf ?? "").replace(/\D/g, "");
-    return `|${cnpjNorm}`;
-  }
-
-  useEffect(() => {
-    if (!grupoId) {
-      setUltimoContatoPorChave({});
-      return;
-    }
-    let q = supabase
-      .from("cobrancas_realizadas")
-      .select("cod_cliente, cnpj_cpf, data_contato, created_at")
-      .eq("grupo_id", grupoId);
-    if (empresaSelecionada) {
-      q = q.eq("empresa_id", empresaSelecionada.id);
-    }
-    q.then(({ data, error }) => {
-      if (error) {
-        setUltimoContatoPorChave({});
-        return;
-      }
-      const map: Record<string, string> = {};
-      (data || []).forEach((r: { cod_cliente: string | null; cnpj_cpf: string | null; data_contato: string | null; created_at: string }) => {
-        const dataRef = r.data_contato || (r.created_at ? r.created_at.slice(0, 10) : null);
-        if (!dataRef) return;
-        const key = chaveContato(r.cod_cliente, r.cnpj_cpf);
-        const prev = map[key];
-        if (!prev || dataRef > prev) map[key] = dataRef;
-        // Fallback por CNPJ: clientes sem código na view (ex. Tax All) têm codigo_nome_fantasia null; em cobranças pode vir cod_cliente do nome "814 - Tax All". Guardar também por "|cnpj" para casar.
-        const cnpjNorm = (r.cnpj_cpf ?? "").replace(/\D/g, "");
-        if (cnpjNorm) {
-          const keySóCnpj = chaveContatoSóCnpj(r.cnpj_cpf);
-          const prevCnpj = map[keySóCnpj];
-          if (!prevCnpj || dataRef > prevCnpj) map[keySóCnpj] = dataRef;
-        }
-      });
-      setUltimoContatoPorChave(map);
-    });
-  }, [grupoId, empresaSelecionada?.id, contatosVersion]);
-
   /** Após inserir ligação, WhatsApp ou e-mail: atualiza "Data último contato" e refresh da view. */
   function aposRegistrarCobranca() {
-    setContatosVersion((v) => v + 1);
     setRefreshTrigger((t) => t + 1);
     void supabase.rpc("refresh_dashboard_receber").then(() => {}, () => {});
   }
@@ -767,9 +714,7 @@ export default function DashboardPage() {
         const dataNeg = info?.status === "negociado_pagamento" && info?.data_negociado ? String(info.data_negociado).slice(0, 10) : "";
         const statusTexto = dataNeg ? `${statusLabel} (${dataNeg})` : statusLabel;
         const dataPrevisao = r.det_ddtprevisao ? new Date(r.det_ddtprevisao).toLocaleDateString("pt-BR") : "";
-        const keyContato = chaveContato(r.codigo_nome_fantasia, r.cnpj_cpf);
-        const isoContato = ultimoContatoPorChave[keyContato] ?? (r.cnpj_cpf ? ultimoContatoPorChave[chaveContatoSóCnpj(r.cnpj_cpf)] : undefined);
-        const dataUltimoContato = isoContato ? new Date(isoContato).toLocaleDateString("pt-BR", { dateStyle: "short" }) : "";
+        const dataUltimoContato = formatarData(r.data_ultimo_contato);
         const valAtualizado = valorAtualizado(r.ValAberto_validado, r.qtde_dias);
         data.push([
           r.nome_fantasia ?? "",
@@ -1641,9 +1586,8 @@ export default function DashboardPage() {
                         </td>
                         <td className="p-2" onClick={handleClienteClick}>
                           {(() => {
-                            const key = chaveContato(g.codigo, g.rows[0]?.cnpj_cpf ?? null);
-                            const iso = ultimoContatoPorChave[key] ?? (g.rows[0]?.cnpj_cpf ? ultimoContatoPorChave[chaveContatoSóCnpj(g.rows[0].cnpj_cpf)] : undefined);
-                            return iso ? new Date(iso).toLocaleDateString("pt-BR", { dateStyle: "short" }) : "—";
+                            const primeira = g.rows[0];
+                            return formatarData(primeira?.data_ultimo_contato ?? null);
                           })()}
                         </td>
                         <td
