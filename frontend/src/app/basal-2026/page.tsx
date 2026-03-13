@@ -35,7 +35,18 @@ export default function Basal2026Page() {
       const data = await file.arrayBuffer();
       const wb = XLSX.read(data, { type: "array" });
 
-      const sheetName = wb.SheetNames.find((n) => n.trim().toLowerCase() === "basal 2026 v1".toLowerCase());
+      // Há mais de uma aba com nome parecido; priorize exatamente "BASAL 2026 V1 "
+      const desiredOrder = ["BASAL 2026 V1 ", "BASAL 2026 V1"];
+      let sheetName: string | undefined;
+      for (const desired of desiredOrder) {
+        sheetName = wb.SheetNames.find((n) => n === desired);
+        if (sheetName) break;
+      }
+      // fallback: comparar por trim/lower se no futuro o nome mudar levemente
+      if (!sheetName) {
+        sheetName = wb.SheetNames.find((n) => n.trim().toLowerCase() === "basal 2026 v1".toLowerCase());
+      }
+
       if (!sheetName) {
         setErro('A aba "BASAL 2026 V1" não foi encontrada na planilha.');
         setStatus(null);
