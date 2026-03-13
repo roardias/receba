@@ -43,9 +43,25 @@ export default function Basal2026Page() {
       }
 
       const sheet = wb.Sheets[sheetName];
+      // Ajustar o range para começar na linha 2 (índice 1), onde está o cabeçalho:
+      const ref = sheet["!ref"];
+      if (!ref) {
+        setErro("Planilha sem área de dados definida.");
+        setStatus(null);
+        return;
+      }
+      const range = XLSX.utils.decode_range(ref);
+      // linha 2 em Excel = índice 1
+      range.s.r = 1;
+
       // raw: false faz o XLSX usar preferencialmente o valor "formatado" da célula.
-      const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false });
-      if (rows.length < 3) {
+      const rows: any[][] = XLSX.utils.sheet_to_json(sheet, {
+        header: 1,
+        raw: false,
+        range,
+      });
+      // Esperamos: rows[0] = cabeçalho (GRUPO, EMPRESA, ..., CNPJ)
+      if (rows.length < 2) {
         setErro("Planilha sem dados para importar (é esperado cabeçalho na linha 2 e dados a partir da linha 3).");
         setStatus(null);
         return;
@@ -55,14 +71,11 @@ export default function Basal2026Page() {
       const problemas: string[] = [];
 
       setProgresso(30);
-      for (let i = 2; i < rows.length; i++) {
+      // i = 1 → linha 3 em Excel (primeira linha de dados)
+      for (let i = 1; i < rows.length; i++) {
         const row = rows[i] || [];
         const grupoRaw = String(row[0] ?? "").trim();
-
-        // Ler o CNPJ diretamente da célula da coluna E (índice 4), priorizando o texto formatado (.w)
-        const cellAddr = XLSX.utils.encode_cell({ r: i, c: 4 });
-        const cell = (sheet as any)[cellAddr];
-        const cnpjRaw = cell ? String((cell.w ?? cell.v) ?? "").trim() : "";
+        const cnpjRaw = String(row[4] ?? "").trim();
         const cnpjDigits = somenteNumeros(cnpjRaw);
 
         if (!grupoRaw && !cnpjRaw) {
