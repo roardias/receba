@@ -1815,7 +1815,8 @@ export default function DashboardPage() {
                           ))}
                           {clienteSelecionado && (
                             <tr className="border-t-2 border-slate-300 bg-slate-100 font-semibold">
-                              <td colSpan={5} className="p-2 text-right">Total:</td>
+                              {/* 6 colunas de descrição: Empresa, Emissão, Vencimento, Dias, NF, Categoria */}
+                              <td colSpan={6} className="p-2 text-right">Total:</td>
                               <td className="p-2 text-right">{formatarMoeda(clienteSelecionado.valPago)}</td>
                               <td className="p-2 text-right font-medium">{formatarMoeda(clienteSelecionado.valAberto)}</td>
                               <td className="p-2 text-right font-medium">{formatarMoeda(clienteSelecionado.valAtualizado)}</td>
@@ -1857,7 +1858,8 @@ export default function DashboardPage() {
                             </tr>
                           ))}
                           <tr className="border-t-2 border-slate-300 bg-slate-100 font-semibold">
-                            <td colSpan={7} className="p-2 text-right">Total:</td>
+                            {/* 8 colunas de descrição: Cód., Cliente, Empresa, Emissão, Vencimento, Dias, NF, Categoria */}
+                            <td colSpan={8} className="p-2 text-right">Total:</td>
                             <td className="p-2 text-right">{formatarMoeda(totalGrupo.valPago)}</td>
                             <td className="p-2 text-right font-medium">{formatarMoeda(totalGrupo.valAberto)}</td>
                             <td className="p-2 text-right font-medium">{formatarMoeda(totalGrupo.valAtualizado)}</td>
