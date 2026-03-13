@@ -202,6 +202,11 @@ export default function HistoricoCobrancasPage() {
       )
     );
     setRefreshKey((k) => k + 1);
+    // Atualiza a view/materialized view usada na tela Relação inadimplentes
+    void supabase.rpc("refresh_dashboard_receber").then(
+      () => {},
+      () => {}
+    );
   }
 
   function iniciarEditarObs(c: Cobranca) {
