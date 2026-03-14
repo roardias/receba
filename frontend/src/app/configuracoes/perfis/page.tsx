@@ -16,6 +16,7 @@ const PERMISSOES_LABELS: Record<string, string> = {
   enviar_email_teste: "Enviar e-mail de teste",
   email_configurar: "Configurar e-mail",
   menu_acessorias: "Acessórias",
+  menu_basal: "Basal 2026",
   menu_agendamentos: "Agendamentos API",
   menu_logs: "Logs API",
   config_grupos_empresas_editar: "Cadastrar/editar grupos e empresas",
@@ -26,7 +27,7 @@ const PERMISSOES_GRUPOS: { titulo: string; keys: string[] }[] = [
   { titulo: "Dashboard e histórico", keys: ["menu_historico_cobrancas", "historico_cobrancas_editar", "dashboard_enviar_email", "dashboard_registrar_ligacao", "dashboard_registrar_whatsapp"] },
   { titulo: "E-mail", keys: ["menu_email", "enviar_email_teste", "email_configurar"] },
   { titulo: "Configurações", keys: ["config_grupos_empresas_editar", "config_minha_empresa_imagem_cor", "menu_cadastro_usuarios"] },
-  { titulo: "Outros menus", keys: ["menu_acessorias", "menu_agendamentos", "menu_logs"] },
+  { titulo: "Outros menus", keys: ["menu_acessorias", "menu_basal", "menu_agendamentos", "menu_logs"] },
 ];
 
 type PerfilTipo = {

@@ -171,7 +171,7 @@ export default function Sidebar({ open, onToggle }: SidebarProps) {
               </li>
             </>
           )}
-          {hasPermissao("menu_acessorias") && (
+          {(hasPermissao("menu_acessorias") || hasPermissao("menu_basal")) && (
             <div className="mt-6">
               <button
                 type="button"
@@ -183,26 +183,30 @@ export default function Sidebar({ open, onToggle }: SidebarProps) {
               </button>
               {importacoesAberto && (
                 <ul className="pl-2 mt-1 space-y-0.5">
-                  <li>
-                    <Link
-                      href="/acessorias"
-                      className={`block px-3 py-2 rounded text-sm ${
-                        isActive("/acessorias") ? "bg-slate-600" : "hover:bg-slate-700"
-                      }`}
-                    >
-                      Cadastro Acessorias
-                    </Link>
-                  </li>
-                  <li>
-                    <Link
-                      href="/basal-2026"
-                      className={`block px-3 py-2 rounded text-sm ${
-                        isActive("/basal-2026") ? "bg-slate-600" : "hover:bg-slate-700"
-                      }`}
-                    >
-                      Basal 2026
-                    </Link>
-                  </li>
+                  {hasPermissao("menu_acessorias") && (
+                    <li>
+                      <Link
+                        href="/acessorias"
+                        className={`block px-3 py-2 rounded text-sm ${
+                          isActive("/acessorias") ? "bg-slate-600" : "hover:bg-slate-700"
+                        }`}
+                      >
+                        Cadastro Acessorias
+                      </Link>
+                    </li>
+                  )}
+                  {hasPermissao("menu_basal") && (
+                    <li>
+                      <Link
+                        href="/basal-2026"
+                        className={`block px-3 py-2 rounded text-sm ${
+                          isActive("/basal-2026") ? "bg-slate-600" : "hover:bg-slate-700"
+                        }`}
+                      >
+                        Basal 2026
+                      </Link>
+                    </li>
+                  )}
                 </ul>
               )}
             </div>

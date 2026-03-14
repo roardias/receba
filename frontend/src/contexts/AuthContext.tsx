@@ -25,6 +25,7 @@ export const PERMISSOES_KEYS = [
   "enviar_email_teste",
   "email_configurar",
   "menu_acessorias",
+  "menu_basal",
   "menu_agendamentos",
   "menu_logs",
   "config_grupos_empresas_editar",

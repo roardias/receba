@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/contexts/AuthContext";
 import * as XLSX from "xlsx";
 
 type LinhaBasal = {
@@ -14,11 +16,19 @@ function somenteNumeros(val: string | null | undefined): string {
 }
 
 export default function Basal2026Page() {
+  const router = useRouter();
+  const { profile, loading, hasPermissao } = useAuth();
   const [preview, setPreview] = useState<LinhaBasal[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [importando, setImportando] = useState(false);
-   const [status, setStatus] = useState<string | null>(null);
-   const [progresso, setProgresso] = useState<number>(0);
+  const [status, setStatus] = useState<string | null>(null);
+  const [progresso, setProgresso] = useState<number>(0);
+
+  useEffect(() => {
+    if (!loading && profile && !hasPermissao("menu_basal")) {
+      router.replace("/dashboard");
+    }
+  }, [loading, profile, hasPermissao, router]);
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     setErro(null);
