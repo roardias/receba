@@ -192,6 +192,21 @@ export default function Basal2026Page() {
       }
 
       setPreview(null);
+      setStatus("Importação concluída. Atualizando dashboard...");
+      setProgresso(90);
+
+      // Atualiza a view do dashboard após alterar empresas_grupo_basal
+      const { error: refreshError } = await supabase.rpc("refresh_dashboard_receber");
+      if (refreshError) {
+        console.error(refreshError);
+        setErro(
+          "Importação concluída, mas houve erro ao atualizar o dashboard. Tente usar o botão 'Forçar atualização' na Relação inadimplentes."
+        );
+        setStatus(null);
+        setProgresso(0);
+        return;
+      }
+
       setStatus("Importação concluída com sucesso.");
       setProgresso(100);
     } catch (err) {
