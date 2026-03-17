@@ -1356,35 +1356,35 @@ export default function DashboardPage() {
               Resumo por status (Val. Atualizado)
             </p>
             <dl className="space-y-1">
-              <div className="flex items-center justify-between text-xs text-slate-500">
+              <div className="grid grid-cols-[1fr,90px,90px,120px] text-xs text-slate-500">
                 <span></span>
-                <span className="w-24 text-right">Qtde Clientes</span>
-                <span className="w-20 text-right">Qtde Títulos</span>
-                <span className="w-28 text-right">Valor</span>
+                <span className="text-right">Qtde Clientes</span>
+                <span className="text-right">Qtde Títulos</span>
+                <span className="text-right">Valor</span>
               </div>
               {resumoPorStatus.map((item) => (
-                <div key={item.value} className="flex items-center justify-between">
+                <div key={item.value} className="grid grid-cols-[1fr,90px,90px,120px] items-center">
                   <dt className="text-slate-600">{item.label}</dt>
-                  <dd className="w-24 text-right text-slate-900">
+                  <dd className="text-right text-slate-900">
                     {item.qtdeClientes}
                   </dd>
-                  <dd className="w-20 text-right text-slate-900">
+                  <dd className="text-right text-slate-900">
                     {item.qtdeTitulos}
                   </dd>
-                  <dd className="w-28 text-right font-medium text-slate-900">
+                  <dd className="text-right font-medium text-slate-900">
                     {formatarMoeda(item.total)}
                   </dd>
                 </div>
               ))}
-              <div className="flex items-center justify-between border-t border-slate-200 pt-2 mt-2">
+              <div className="grid grid-cols-[1fr,90px,90px,120px] items-center border-t border-slate-200 pt-2 mt-2">
                 <dt className="font-semibold text-slate-800">Total</dt>
-                <dd className="w-24 text-right font-semibold text-slate-900">
+                <dd className="text-right font-semibold text-slate-900">
                   {resumoPorStatus.reduce((s, i) => s + i.qtdeClientes, 0)}
                 </dd>
-                <dd className="w-20 text-right font-semibold text-slate-900">
+                <dd className="text-right font-semibold text-slate-900">
                   {resumoPorStatus.reduce((s, i) => s + i.qtdeTitulos, 0)}
                 </dd>
-                <dd className="w-28 text-right font-semibold text-slate-900">
+                <dd className="text-right font-semibold text-slate-900">
                   {formatarMoeda(resumoPorStatus.reduce((s, i) => s + i.total, 0))}
                 </dd>
               </div>
