@@ -644,26 +644,47 @@ export default function DashboardPage() {
         value: string;
         label: string;
         total: number;
+        cnpjs: Set<string>;
+        qtdeTitulos: number;
       }
     >();
 
     // Quadro resumo: usa todos os dados agrupados (independente de filtros de busca/status),
     // respeitando apenas grupo/empresa/categorias carregados.
     for (const g of dadosAgrupados) {
-      const chave = g.rows[0]?.chave_cliente;
+      const primeira = g.rows[0];
+      const chave = primeira?.chave_cliente;
       const info = chave ? (statusPorChave[chave] ?? statusDashboard[chave]) : null;
       const statusValue = info?.status ?? "em_cobranca";
       const opt = STATUS_OPCOES.find((o) => o.value === statusValue);
       const label = opt?.label ?? statusValue;
+
+      const cnpj = (primeira?.cnpj_cpf ?? "").replace(/\D/g, "");
       const existing = map.get(statusValue);
       if (existing) {
         existing.total += g.valAtualizado;
+        existing.qtdeTitulos += g.rows.length;
+        if (cnpj) existing.cnpjs.add(cnpj);
       } else {
-        map.set(statusValue, { value: statusValue, label, total: g.valAtualizado });
+        const set = new Set<string>();
+        if (cnpj) set.add(cnpj);
+        map.set(statusValue, {
+          value: statusValue,
+          label,
+          total: g.valAtualizado,
+          cnpjs: set,
+          qtdeTitulos: g.rows.length,
+        });
       }
     }
 
-    const items = Array.from(map.values());
+    const items = Array.from(map.values()).map((item) => ({
+      value: item.value,
+      label: item.label,
+      total: item.total,
+      qtdeClientes: item.cnpjs.size,
+      qtdeTitulos: item.qtdeTitulos,
+    }));
     // ordenar pela ordem de STATUS_OPCOES
     items.sort((a, b) => {
       const ia = STATUS_OPCOES.findIndex((o) => o.value === a.value);
@@ -1335,17 +1356,35 @@ export default function DashboardPage() {
               Resumo por status (Val. Atualizado)
             </p>
             <dl className="space-y-1">
+              <div className="flex items-center justify-between text-xs text-slate-500">
+                <span></span>
+                <span className="w-24 text-right">Qtde Clientes</span>
+                <span className="w-20 text-right">Qtde Títulos</span>
+                <span className="w-28 text-right">Valor</span>
+              </div>
               {resumoPorStatus.map((item) => (
                 <div key={item.value} className="flex items-center justify-between">
                   <dt className="text-slate-600">{item.label}</dt>
-                  <dd className="font-medium text-slate-900">
+                  <dd className="w-24 text-right text-slate-900">
+                    {item.qtdeClientes}
+                  </dd>
+                  <dd className="w-20 text-right text-slate-900">
+                    {item.qtdeTitulos}
+                  </dd>
+                  <dd className="w-28 text-right font-medium text-slate-900">
                     {formatarMoeda(item.total)}
                   </dd>
                 </div>
               ))}
               <div className="flex items-center justify-between border-t border-slate-200 pt-2 mt-2">
                 <dt className="font-semibold text-slate-800">Total</dt>
-                <dd className="font-semibold text-slate-900">
+                <dd className="w-24 text-right font-semibold text-slate-900">
+                  {resumoPorStatus.reduce((s, i) => s + i.qtdeClientes, 0)}
+                </dd>
+                <dd className="w-20 text-right font-semibold text-slate-900">
+                  {resumoPorStatus.reduce((s, i) => s + i.qtdeTitulos, 0)}
+                </dd>
+                <dd className="w-28 text-right font-semibold text-slate-900">
                   {formatarMoeda(resumoPorStatus.reduce((s, i) => s + i.total, 0))}
                 </dd>
               </div>
