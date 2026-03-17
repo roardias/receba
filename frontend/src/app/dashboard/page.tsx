@@ -1351,44 +1351,47 @@ export default function DashboardPage() {
 
       {grupoId && !loadingDados && dadosVisiveis.length > 0 && resumoPorStatus.length > 0 && (
         <div className="mt-4 flex justify-end">
-          <div className="w-full max-w-sm rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
-            <p className="font-semibold text-slate-800 mb-2">
-              Resumo por status (Val. Atualizado)
-            </p>
-            <dl className="space-y-1">
-              <div className="grid grid-cols-[1fr,90px,90px,120px] text-xs text-slate-500">
-                <span></span>
-                <span className="text-right">Qtde Clientes</span>
-                <span className="text-right">Qtde Títulos</span>
-                <span className="text-right">Valor</span>
-              </div>
-              {resumoPorStatus.map((item) => (
-                <div key={item.value} className="grid grid-cols-[1fr,90px,90px,120px] items-center">
-                  <dt className="text-slate-600">{item.label}</dt>
-                  <dd className="text-right text-slate-900">
-                    {item.qtdeClientes}
+            <div className="w-full max-w-md rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs">
+              <p className="font-semibold text-slate-800 mb-2 text-sm">
+                Resumo por status (Val. Atualizado)
+              </p>
+              <dl className="space-y-1">
+                <div className="grid grid-cols-[minmax(0,1.4fr),minmax(80px,0.6fr),minmax(80px,0.6fr),minmax(110px,0.8fr)] text-[11px] text-slate-500">
+                  <span></span>
+                  <span className="text-right">Qtde Clientes</span>
+                  <span className="text-right">Qtde Títulos</span>
+                  <span className="text-right">Valor</span>
+                </div>
+                {resumoPorStatus.map((item) => (
+                  <div
+                    key={item.value}
+                    className="grid grid-cols-[minmax(0,1.4fr),minmax(80px,0.6fr),minmax(80px,0.6fr),minmax(110px,0.8fr)] items-center gap-x-2"
+                  >
+                    <dt className="text-slate-600 leading-snug">{item.label}</dt>
+                    <dd className="text-right text-slate-900 tabular-nums">
+                      {item.qtdeClientes}
+                    </dd>
+                    <dd className="text-right text-slate-900 tabular-nums">
+                      {item.qtdeTitulos}
+                    </dd>
+                    <dd className="text-right font-medium text-slate-900 tabular-nums">
+                      {formatarMoeda(item.total)}
+                    </dd>
+                  </div>
+                ))}
+                <div className="grid grid-cols-[minmax(0,1.4fr),minmax(80px,0.6fr),minmax(80px,0.6fr),minmax(110px,0.8fr)] items-center border-t border-slate-200 pt-2 mt-2 gap-x-2">
+                  <dt className="font-semibold text-slate-800">Total</dt>
+                  <dd className="text-right font-semibold text-slate-900 tabular-nums">
+                    {resumoPorStatus.reduce((s, i) => s + i.qtdeClientes, 0)}
                   </dd>
-                  <dd className="text-right text-slate-900">
-                    {item.qtdeTitulos}
+                  <dd className="text-right font-semibold text-slate-900 tabular-nums">
+                    {resumoPorStatus.reduce((s, i) => s + i.qtdeTitulos, 0)}
                   </dd>
-                  <dd className="text-right font-medium text-slate-900">
-                    {formatarMoeda(item.total)}
+                  <dd className="text-right font-semibold text-slate-900 tabular-nums">
+                    {formatarMoeda(resumoPorStatus.reduce((s, i) => s + i.total, 0))}
                   </dd>
                 </div>
-              ))}
-              <div className="grid grid-cols-[1fr,90px,90px,120px] items-center border-t border-slate-200 pt-2 mt-2">
-                <dt className="font-semibold text-slate-800">Total</dt>
-                <dd className="text-right font-semibold text-slate-900">
-                  {resumoPorStatus.reduce((s, i) => s + i.qtdeClientes, 0)}
-                </dd>
-                <dd className="text-right font-semibold text-slate-900">
-                  {resumoPorStatus.reduce((s, i) => s + i.qtdeTitulos, 0)}
-                </dd>
-                <dd className="text-right font-semibold text-slate-900">
-                  {formatarMoeda(resumoPorStatus.reduce((s, i) => s + i.total, 0))}
-                </dd>
-              </div>
-            </dl>
+              </dl>
           </div>
         </div>
       )}
