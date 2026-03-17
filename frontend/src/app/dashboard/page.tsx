@@ -662,7 +662,7 @@ export default function DashboardPage() {
       const cnpj = (primeira?.cnpj_cpf ?? "").replace(/\D/g, "");
       const existing = map.get(statusValue);
       if (existing) {
-        existing.total += g.valAtualizado;
+        existing.total += g.valAberto;
         existing.qtdeTitulos += g.rows.length;
         if (cnpj) existing.cnpjs.add(cnpj);
       } else {
@@ -671,7 +671,7 @@ export default function DashboardPage() {
         map.set(statusValue, {
           value: statusValue,
           label,
-          total: g.valAtualizado,
+          total: g.valAberto ?? 0,
           cnpjs: set,
           qtdeTitulos: g.rows.length,
         });
@@ -1353,7 +1353,7 @@ export default function DashboardPage() {
         <div className="mt-4 flex justify-end">
             <div className="w-full max-w-md rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs">
               <p className="font-semibold text-slate-800 mb-2 text-sm">
-                Resumo por status (Val. Atualizado)
+                Resumo por status (Val. Aberto)
               </p>
               <dl className="space-y-1">
                 <div className="grid grid-cols-[minmax(0,1.4fr),minmax(80px,0.6fr),minmax(80px,0.6fr),minmax(110px,0.8fr)] text-[11px] text-slate-500">
