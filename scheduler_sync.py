@@ -64,6 +64,26 @@ def _get_supabase():
     """Retorna cliente Supabase (criado uma vez). Prefere service_role para bypass de RLS no sync."""
     global SUPABASE_CLIENT
     if SUPABASE_CLIENT is None:
+        # Compatibilidade: algumas versões da gotrue passam `proxy=` para httpx.Client.
+        # Em outras versões do httpx, o construtor aceita apenas `proxies=`.
+        # Este patch evita crash por TypeError ao instanciar o client.
+        try:
+            import httpx
+            import inspect
+
+            if "proxy" not in inspect.signature(httpx.Client.__init__).parameters:
+                _orig_init = httpx.Client.__init__
+
+                def _patched_init(self, *args, proxy=None, **kwargs):
+                    if proxy is not None and "proxies" not in kwargs:
+                        kwargs["proxies"] = proxy
+                    return _orig_init(self, *args, **kwargs)
+
+                httpx.Client.__init__ = _patched_init  # type: ignore[assignment]
+        except Exception:
+            # Se não der para fazer o patch, seguimos e deixamos o erro original aparecer.
+            pass
+
         url = os.getenv("SUPABASE_URL") or os.getenv("NEXT_PUBLIC_SUPABASE_URL")
         # service_role ignora RLS no Supabase — evita 42501 em recebimentos_omie e outras tabelas de sync
         key = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_KEY")
@@ -222,6 +242,15 @@ def listar_jobs_agora(supabase, ignorar_horario: bool = False) -> list[tuple[str
         data_ate = (a.get("pagamentos_data_ate") or "").strip() or None
         jobs.append((label, gids, eids, api_tipos, data_de, data_ate))
 
+    # LOG DETALHADO: jobs brutos por agendamento (apenas com SCHEDULER_DEBUG=1)
+    if debug:
+        print("  [DEBUG] Jobs bruto (por agendamento):", flush=True)
+        for (label, gids, eids, api_tipos, data_de, data_ate) in jobs:
+            print(
+                f\"    label={label!r} gids={gids} eids={eids} apis={api_tipos} pag_de={data_de!r} pag_ate={data_ate!r}\",
+                flush=True,
+            )
+
     return jobs
 
 
@@ -267,6 +296,10 @@ def worker():
             try:
                 supabase = _get_supabase()
                 empresas = obter_empresas_para_sync(supabase, grupo_ids, empresa_ids)
+                print(
+                    f\"  [DEBUG-WORKER] Executando job label={label!r} grupo_ids={grupo_ids} empresa_ids={empresa_ids} api_tipos={api_tipos}\",
+                    flush=True,
+                )
                 if not empresas:
                     print(f"  [{label}] Nenhuma empresa com credenciais.", flush=True)
                 else:
@@ -379,6 +412,21 @@ def ciclo(ignorar_horario: bool = False):
         if not api_tipos:
             api_tipos = ["clientes"]
         jobs_finais.append((label, gids, eids, api_tipos, data_de, data_ate))
+
+    if debug:
+        print("  [DEBUG] Jobs unificados por (grupo_ids, empresa_ids):", flush=True)
+        for (gids_key, eids_key), (label, gids, eids, apis_set, data_de, data_ate) in jobs_unicos.items():
+            print(
+                f\"    work_key_gids={list(gids_key)} work_key_eids={list(eids_key)} label={label!r} apis_set={sorted(list(apis_set))} pag_de={data_de!r} pag_ate={data_ate!r}\",
+                flush=True,
+            )
+
+        print("  [DEBUG] Jobs finais (ordem interna de APIs aplicada):", flush=True)
+        for (label, gids, eids, api_tipos, data_de, data_ate) in jobs_finais:
+            print(
+                f\"    label={label!r} gids={gids} eids={eids} api_tipos_ordenados={api_tipos} pag_de={data_de!r} pag_ate={data_ate!r}\",
+                flush=True,
+            )
 
     jobs_ordenados = sorted(jobs_finais, key=lambda x: x[0].lower())
     adicionados = 0
