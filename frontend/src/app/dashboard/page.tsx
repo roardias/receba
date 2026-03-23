@@ -715,9 +715,11 @@ export default function DashboardPage() {
       "Nome fantasia",
       "Razão social",
       "Grupo",
+      "Empresa (interna)",
       "Cód.",
       "CNPJ/CPF",
       "Nota fiscal",
+      "Data de emissão",
       "Data de vencimento",
       "Status",
       "Data último contato",
@@ -734,6 +736,7 @@ export default function DashboardPage() {
         const statusLabel = info ? (STATUS_OPCOES.find((o) => o.value === info.status)?.label ?? info.status) : "Em cobrança";
         const dataNeg = info?.status === "negociado_pagamento" && info?.data_negociado ? String(info.data_negociado).slice(0, 10) : "";
         const statusTexto = dataNeg ? `${statusLabel} (${dataNeg})` : statusLabel;
+        const dataEmissao = formatarData(r.det_ddtemissao);
         const dataPrevisao = r.det_ddtprevisao ? new Date(r.det_ddtprevisao).toLocaleDateString("pt-BR") : "";
         const dataUltimoContato = formatarData(r.data_ultimo_contato);
         const valAtualizado = valorAtualizado(r.ValAberto_validado, r.qtde_dias);
@@ -741,9 +744,11 @@ export default function DashboardPage() {
           r.nome_fantasia ?? "",
           r.razao_social ?? "",
           r.grupo_empresas ?? "",
+          r.empresa ?? "",
           r.codigo_nome_fantasia ?? "",
           r.cnpj_cpf ?? "",
           r.det_cnumdocfiscal ?? "",
+          dataEmissao,
           dataPrevisao,
           statusTexto,
           dataUltimoContato,
