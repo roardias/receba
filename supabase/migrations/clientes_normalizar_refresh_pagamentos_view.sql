@@ -120,7 +120,11 @@ ordenado AS (
     t.mes,
     t.total_pago_mes,
     d.valor_ata,
-    ROW_NUMBER() OVER (PARTITION BY t.cpf ORDER BY t.ano, t.mes) AS rn
+    ROW_NUMBER() OVER (PARTITION BY t.cpf ORDER BY t.ano, t.mes) AS rn,
+    CASE
+      WHEN t.ano > 2026 OR (t.ano = 2026 AND t.mes >= 2) THEN 48000::NUMERIC(20,2)
+      ELSE 50000::NUMERIC(20,2)
+    END AS limite_regra
   FROM totais_mes t
   INNER JOIN (SELECT cpf, nome, valor_ata FROM dividendos_ata_2025 WHERE empresa_id = (SELECT id FROM iris_id)) d ON d.cpf = t.cpf
 ),
@@ -134,20 +138,20 @@ rec AS (
     (o.valor_ata)::NUMERIC(20,2) AS saldo_ata_inicial,
     (CASE
       WHEN o.valor_ata = 1000 THEN (o.total_pago_mes - LEAST(o.total_pago_mes, o.valor_ata))::NUMERIC(20,2)
-      WHEN o.total_pago_mes > 50000 AND o.valor_ata > 50000 THEN 50000::NUMERIC(20,2)
-      WHEN o.total_pago_mes > 50000 AND o.valor_ata <= 50000 AND o.valor_ata > 0 THEN (o.total_pago_mes - o.valor_ata)::NUMERIC(20,2)
+      WHEN o.total_pago_mes > o.limite_regra AND o.valor_ata > o.limite_regra THEN o.limite_regra::NUMERIC(20,2)
+      WHEN o.total_pago_mes > o.limite_regra AND o.valor_ata <= o.limite_regra AND o.valor_ata > 0 THEN (o.total_pago_mes - o.valor_ata)::NUMERIC(20,2)
       ELSE o.total_pago_mes::NUMERIC(20,2)
     END) AS competencia_mes,
     (CASE
       WHEN o.valor_ata = 1000 THEN LEAST(o.total_pago_mes, o.valor_ata)::NUMERIC(20,2)
-      WHEN o.total_pago_mes > 50000 AND o.valor_ata > 50000 THEN LEAST(o.total_pago_mes - 50000, o.valor_ata)::NUMERIC(20,2)
-      WHEN o.total_pago_mes > 50000 AND o.valor_ata <= 50000 AND o.valor_ata > 0 THEN o.valor_ata::NUMERIC(20,2)
+      WHEN o.total_pago_mes > o.limite_regra AND o.valor_ata > o.limite_regra THEN LEAST(o.total_pago_mes - o.limite_regra, o.valor_ata)::NUMERIC(20,2)
+      WHEN o.total_pago_mes > o.limite_regra AND o.valor_ata <= o.limite_regra AND o.valor_ata > 0 THEN o.valor_ata::NUMERIC(20,2)
       ELSE 0::NUMERIC(20,2)
     END) AS baixa_ata_mes,
     (CASE
       WHEN o.valor_ata = 1000 THEN (o.valor_ata - LEAST(o.total_pago_mes, o.valor_ata))::NUMERIC(20,2)
-      WHEN o.total_pago_mes > 50000 AND o.valor_ata > 50000 THEN GREATEST(0, o.valor_ata - LEAST(o.total_pago_mes - 50000, o.valor_ata))::NUMERIC(20,2)
-      WHEN o.total_pago_mes > 50000 AND o.valor_ata <= 50000 AND o.valor_ata > 0 THEN 0::NUMERIC(20,2)
+      WHEN o.total_pago_mes > o.limite_regra AND o.valor_ata > o.limite_regra THEN GREATEST(0, o.valor_ata - LEAST(o.total_pago_mes - o.limite_regra, o.valor_ata))::NUMERIC(20,2)
+      WHEN o.total_pago_mes > o.limite_regra AND o.valor_ata <= o.limite_regra AND o.valor_ata > 0 THEN 0::NUMERIC(20,2)
       ELSE o.valor_ata::NUMERIC(20,2)
     END) AS saldo_ata_final,
     o.rn
@@ -164,22 +168,22 @@ rec AS (
     (CASE
       WHEN r.saldo_ata_final = 0 THEN o.total_pago_mes::NUMERIC(20,2)
       WHEN o.valor_ata = 1000 AND r.saldo_ata_final > 0 THEN (o.total_pago_mes - LEAST(o.total_pago_mes, r.saldo_ata_final))::NUMERIC(20,2)
-      WHEN o.total_pago_mes > 50000 AND r.saldo_ata_final > 50000 THEN 50000::NUMERIC(20,2)
-      WHEN o.total_pago_mes > 50000 AND r.saldo_ata_final <= 50000 AND r.saldo_ata_final > 0 THEN (o.total_pago_mes - r.saldo_ata_final)::NUMERIC(20,2)
+      WHEN o.total_pago_mes > o.limite_regra AND r.saldo_ata_final > o.limite_regra THEN o.limite_regra::NUMERIC(20,2)
+      WHEN o.total_pago_mes > o.limite_regra AND r.saldo_ata_final <= o.limite_regra AND r.saldo_ata_final > 0 THEN (o.total_pago_mes - r.saldo_ata_final)::NUMERIC(20,2)
       ELSE o.total_pago_mes::NUMERIC(20,2)
     END) AS competencia_mes,
     (CASE
       WHEN r.saldo_ata_final = 0 THEN 0::NUMERIC(20,2)
       WHEN o.valor_ata = 1000 AND r.saldo_ata_final > 0 THEN LEAST(o.total_pago_mes, r.saldo_ata_final)::NUMERIC(20,2)
-      WHEN o.total_pago_mes > 50000 AND r.saldo_ata_final > 50000 THEN LEAST(o.total_pago_mes - 50000, r.saldo_ata_final)::NUMERIC(20,2)
-      WHEN o.total_pago_mes > 50000 AND r.saldo_ata_final <= 50000 AND r.saldo_ata_final > 0 THEN r.saldo_ata_final::NUMERIC(20,2)
+      WHEN o.total_pago_mes > o.limite_regra AND r.saldo_ata_final > o.limite_regra THEN LEAST(o.total_pago_mes - o.limite_regra, r.saldo_ata_final)::NUMERIC(20,2)
+      WHEN o.total_pago_mes > o.limite_regra AND r.saldo_ata_final <= o.limite_regra AND r.saldo_ata_final > 0 THEN r.saldo_ata_final::NUMERIC(20,2)
       ELSE 0::NUMERIC(20,2)
     END) AS baixa_ata_mes,
     (CASE
       WHEN r.saldo_ata_final = 0 THEN 0::NUMERIC(20,2)
       WHEN o.valor_ata = 1000 AND r.saldo_ata_final > 0 THEN (r.saldo_ata_final - LEAST(o.total_pago_mes, r.saldo_ata_final))::NUMERIC(20,2)
-      WHEN o.total_pago_mes > 50000 AND r.saldo_ata_final > 50000 THEN GREATEST(0, r.saldo_ata_final - LEAST(o.total_pago_mes - 50000, r.saldo_ata_final))::NUMERIC(20,2)
-      WHEN o.total_pago_mes > 50000 AND r.saldo_ata_final <= 50000 AND r.saldo_ata_final > 0 THEN 0::NUMERIC(20,2)
+      WHEN o.total_pago_mes > o.limite_regra AND r.saldo_ata_final > o.limite_regra THEN GREATEST(0, r.saldo_ata_final - LEAST(o.total_pago_mes - o.limite_regra, r.saldo_ata_final))::NUMERIC(20,2)
+      WHEN o.total_pago_mes > o.limite_regra AND r.saldo_ata_final <= o.limite_regra AND r.saldo_ata_final > 0 THEN 0::NUMERIC(20,2)
       ELSE r.saldo_ata_final::NUMERIC(20,2)
     END) AS saldo_ata_final,
     o.rn
@@ -210,7 +214,7 @@ WHERE c.saldo_ata_inicial > 0
 ORDER BY det.nome, det.ano, det.mes;
 
 COMMENT ON VIEW view_controle_dividendos_ata_2025 IS
-  'Controle até zerar saldo ata 2025 (Iris). Regras 1k e 50k só até zerar; depois competência=total do mês, baixa=0.';
+  'Controle até zerar saldo ata 2025 (Iris). Regras 1k e limite 50k (jan/26) ou 48k (fev/26+) só até zerar; depois competência=total do mês, baixa=0.';
 
 GRANT SELECT ON view_controle_dividendos_ata_2025 TO anon;
 GRANT SELECT ON view_controle_dividendos_ata_2025 TO service_role;
