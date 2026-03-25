@@ -54,7 +54,7 @@ SYNC_QUEUE = queue.Queue()
 SUPABASE_CLIENT = None
 # Deduplicação: evita loop e re-disparos indevidos
 # - Jobs duplicados: vários agendamentos para o mesmo grupo/empresas = 1 job só
-# - Cooldown: por work_key (grupo+empresas). Não enfileirar o mesmo job de novo antes de COOLDOWN_SEGUNDOS.
+# - Cooldown: por work_key (grupo+empresas+api_tipos). Não enfileirar o mesmo job de novo antes de COOLDOWN_SEGUNDOS.
 #   Job com muitas empresas pode levar vários minutos; com 2 min o scheduler re-enfileirava e gerava execução duplicada.
 ULTIMO_ADDED = {}  # work_key -> timestamp da última vez que foi enfileirado
 COOLDOWN_SEGUNDOS = 15 * 60  # 15 min: não re-enfileirar o mesmo grupo+empresas (evita duplicata quando o job demora vários minutos)
@@ -431,7 +431,13 @@ def ciclo(ignorar_horario: bool = False):
     jobs_ordenados = sorted(jobs_finais, key=lambda x: x[0].lower())
     adicionados = 0
     for label, gids, eids, api_tipos, data_de, data_ate in jobs_ordenados:
-        work_key = (tuple(sorted(gids or [])), tuple(sorted(eids or [])))
+        # Cooldown precisa considerar os tipos de API, senão um agendamento (ex.: pagamentos 04:30)
+        # pode impedir outro do mesmo grupo (ex.: recebimentos 04:40).
+        work_key = (
+            tuple(sorted(gids or [])),
+            tuple(sorted(eids or [])),
+            tuple(api_tipos or []),
+        )
         # Cooldown por work_key: evita enfileirar o mesmo job duas vezes seguidas (ex.: verificação às 16:51 e 16:52)
         if not ignorar_horario and work_key in ULTIMO_ADDED:
             if now_ts - ULTIMO_ADDED[work_key] < COOLDOWN_SEGUNDOS:
