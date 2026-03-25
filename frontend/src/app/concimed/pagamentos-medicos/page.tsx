@@ -66,7 +66,7 @@ function textoParaExcel(s: string | null | undefined): string {
 
 const FORMATO_NUMERO_BR = "#.##0,00";
 const ANO_TODOS = "";
-type OrdenarPor = "razao_social" | "cnpj_cpf" | "total";
+type OrdenarPor = "razao_social" | "cnpj_cpf" | "total" | `mes:${string}`;
 
 export default function PagamentosMedicosPage() {
   const [rows, setRows] = useState<ViewRow[]>([]);
@@ -209,6 +209,18 @@ export default function PagamentosMedicosPage() {
         const y = (b.cnpj_cpf_apenas_numeros || "").padStart(14, "0");
         return ordemAsc ? x.localeCompare(y) : y.localeCompare(x);
       });
+    } else if (ordenarPor.startsWith("mes:")) {
+      const km = ordenarPor.slice(4);
+      ord.sort((a, b) => {
+        const va = Number(a.porMes.get(km)) || 0;
+        const vb = Number(b.porMes.get(km)) || 0;
+        if (va === vb) {
+          // Desempate: total (desc) e depois nome
+          if (a.valor_total !== b.valor_total) return b.valor_total - a.valor_total;
+          return (a.razao_social || "").localeCompare(b.razao_social || "", "pt-BR");
+        }
+        return ordemAsc ? va - vb : vb - va;
+      });
     } else {
       ord.sort((a, b) =>
         ordemAsc ? a.valor_total - b.valor_total : b.valor_total - a.valor_total
@@ -223,6 +235,17 @@ export default function PagamentosMedicosPage() {
     } else {
       setOrdenarPor(col);
       setOrdemAsc(col === "total" ? false : true);
+    }
+  }
+
+  function toggleOrdenacaoMes(km: string) {
+    const col: OrdenarPor = `mes:${km}`;
+    if (ordenarPor === col) {
+      setOrdemAsc((a) => !a);
+    } else {
+      setOrdenarPor(col);
+      // Para mês, default desc (maior valor primeiro)
+      setOrdemAsc(false);
     }
   }
 
@@ -364,9 +387,16 @@ export default function PagamentosMedicosPage() {
                 </th>
                 {colunasMesAno.map((km) => {
                   const [ano, mes] = km.split("_").map(Number);
+                  const col: OrdenarPor = `mes:${km}`;
                   return (
-                    <th key={km} className="p-2 border-b border-slate-200 bg-slate-100 whitespace-nowrap min-w-[80px]">
+                    <th
+                      key={km}
+                      className="p-2 border-b border-slate-200 bg-slate-100 whitespace-nowrap min-w-[80px] cursor-pointer select-none hover:bg-slate-200 text-right"
+                      onClick={() => toggleOrdenacaoMes(km)}
+                      title={`Ordenar por ${labelMes(ano, mes)}`}
+                    >
                       {labelMes(ano, mes)}
+                      {ordenarPor === col && (ordemAsc ? " ↑" : " ↓")}
                     </th>
                   );
                 })}
