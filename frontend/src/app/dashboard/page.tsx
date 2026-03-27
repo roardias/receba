@@ -31,7 +31,6 @@ type DashboardRow = {
 /** Fallback quando a tabela status_cobranca ainda não foi carregada ou não existe. */
 const FALLBACK_STATUS_OPCOES: { value: string; label: string }[] = [
   { value: "em_cobranca", label: "Em cobrança" },
-  { value: "vence_hoje", label: "Vence hoje" },
   { value: "negociado_pagamento", label: "Negociado pagamento" },
   { value: "nao_cumpriu_promessa_pagamento", label: "Não cumpriu promessa de pagamento" },
   { value: "bloqueado", label: "Bloqueado" },
@@ -418,7 +417,6 @@ export default function DashboardPage() {
   }, []);
 
   const STATUS_OPCOES = statusOpcoes.length ? statusOpcoes : FALLBACK_STATUS_OPCOES;
-  const STATUS_OPCOES_MANUAIS = STATUS_OPCOES.filter((o) => o.value !== "vence_hoje");
 
   useEffect(() => {
     (async () => {
@@ -615,38 +613,15 @@ export default function DashboardPage() {
       )
     : dadosAgrupados;
 
-  const hojeLocalStr = (() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  })();
-
-  /**
-   * Status efetivo:
-   * - Mantém status manual se diferente de "em_cobranca";
-   * - Se estiver em "em_cobranca" e houver título com det_ddtprevisao = hoje, retorna "vence_hoje".
-   */
-  function statusEfetivo(rows: DashboardRow[]): { status: string; data_negociado: string | null } {
-    const chave = rows[0]?.chave_cliente;
-    const base = chave ? (statusPorChave[chave] ?? statusDashboard[chave]) : null;
-    const statusBase = base?.status ?? "em_cobranca";
-    if (statusBase !== "em_cobranca") {
-      return { status: statusBase, data_negociado: base?.data_negociado ?? null };
-    }
-    const venceHoje = rows.some((r) => (r.det_ddtprevisao ?? "").slice(0, 10) === hojeLocalStr);
-    if (venceHoje) {
-      return { status: "vence_hoje", data_negociado: null };
-    }
-    return { status: "em_cobranca", data_negociado: base?.data_negociado ?? null };
-  }
-
   const dadosFiltradosPorStatus = useMemo(() => {
     if (!filtroStatus) return dadosFiltrados;
     return dadosFiltrados.filter((g) => {
-      const info = statusEfetivo(g.rows);
+      const chave = g.rows[0]?.chave_cliente;
+      const info = chave ? (statusPorChave[chave] ?? statusDashboard[chave]) : null;
       const s = info?.status ?? "em_cobranca";
       return s === filtroStatus;
     });
-  }, [dadosFiltrados, filtroStatus, statusDashboard, statusPorChave, hojeLocalStr]);
+  }, [dadosFiltrados, filtroStatus, statusDashboard, statusPorChave]);
 
   const totaisColunas = useMemo(
     () =>
@@ -678,7 +653,8 @@ export default function DashboardPage() {
     // respeitando apenas grupo/empresa/categorias carregados.
     for (const g of dadosAgrupados) {
       const primeira = g.rows[0];
-      const info = statusEfetivo(g.rows);
+      const chave = primeira?.chave_cliente;
+      const info = chave ? (statusPorChave[chave] ?? statusDashboard[chave]) : null;
       const statusValue = info?.status ?? "em_cobranca";
       const opt = STATUS_OPCOES.find((o) => o.value === statusValue);
       const label = opt?.label ?? statusValue;
@@ -716,7 +692,7 @@ export default function DashboardPage() {
       return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
     });
     return items;
-  }, [dadosAgrupados, statusDashboard, statusPorChave, hojeLocalStr]);
+  }, [dadosAgrupados, statusDashboard, statusPorChave]);
 
   const dadosOrdenados = [...dadosFiltradosPorStatus].sort((a, b) => {
     let cmp = 0;
@@ -755,7 +731,8 @@ export default function DashboardPage() {
     const data: (string | number)[][] = [header];
     for (const g of dadosOrdenados) {
       for (const r of g.rows) {
-        const info = statusEfetivo(g.rows);
+        const chave = r.chave_cliente;
+        const info = chave ? (statusPorChave[chave] ?? statusDashboard[chave]) : null;
         const statusLabel = info ? (STATUS_OPCOES.find((o) => o.value === info.status)?.label ?? info.status) : "Em cobrança";
         const dataNeg = info?.status === "negociado_pagamento" && info?.data_negociado ? String(info.data_negociado).slice(0, 10) : "";
         const statusTexto = dataNeg ? `${statusLabel} (${dataNeg})` : statusLabel;
@@ -1642,7 +1619,8 @@ export default function DashboardPage() {
                         </td>
                         <td className="p-2" onClick={handleClienteClick}>
                           {(() => {
-                            const info = statusEfetivo(g.rows);
+                            const chave = g.rows[0]?.chave_cliente;
+                            const info = chave ? (statusPorChave[chave] ?? statusDashboard[chave]) : null;
                             const statusLabel = info ? (STATUS_OPCOES.find((o) => o.value === info.status)?.label ?? info.status) : "Em cobrança";
                             const dataNeg = info?.status === "negociado_pagamento" && info?.data_negociado ? String(info.data_negociado).slice(0, 10) : null;
                             return (
@@ -1975,7 +1953,7 @@ export default function DashboardPage() {
                             onChange={(e) => setStatusEscolhido(e.target.value)}
                             className="w-full px-3 py-2 border border-slate-300 rounded"
                           >
-                            {STATUS_OPCOES_MANUAIS.map((o) => (
+                            {STATUS_OPCOES.map((o) => (
                               <option key={o.value} value={o.value}>
                                 {o.label}
                               </option>
