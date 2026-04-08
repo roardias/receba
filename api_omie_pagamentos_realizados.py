@@ -15,7 +15,7 @@ Parâmetros enviados ao Omie (ListarMovimentos):
   app_key, app_secret
 
 As datas dDtPagtoDe e dDtPagtoAte vêm do agendamento (pagamentos_data_de, pagamentos_data_ate)
-ou de variáveis de ambiente PAGAMENTOS_PAGTO_DE / PAGAMENTOS_PAGTO_ATE, ou padrão dinâmico (hoje até ~2 anos atrás).
+ou de variáveis de ambiente PAGAMENTOS_PAGTO_DE / PAGAMENTOS_PAGTO_ATE, ou padrão dinâmico (hoje até ~10 anos atrás).
 """
 
 import argparse
@@ -35,12 +35,13 @@ CSV_EMPRESAS = "exemplo_empresas.csv"
 PASTA_SAIDA = "output"
 CSV_SAIDA = "pagamentos_realizados_omie.csv"
 
-# Padrão quando não há env/agendamento: ~2 anos (730 dias), análogo ao antigo 365 = ~1 ano.
-DIAS_PERIODO_PADRAO_PAGAMENTO = 730
+# Padrão quando não há env/agendamento: ~10 anos (365×10 dias), mesmo critério anual já usado no projeto.
+ANOS_PERIODO_PADRAO_PAGAMENTO = 10
+DIAS_PERIODO_PADRAO_PAGAMENTO = 365 * ANOS_PERIODO_PADRAO_PAGAMENTO
 
 
 def _datas_padrao_pagamento() -> tuple[str, str]:
-    """Retorna (dDtPagtoDe, dDtPagtoAte) em DD/MM/AAAA: hoje − ~2 anos até hoje."""
+    """Retorna (dDtPagtoDe, dDtPagtoAte) em DD/MM/AAAA: hoje − ~10 anos até hoje."""
     hoje = date.today()
     de = hoje - timedelta(days=DIAS_PERIODO_PADRAO_PAGAMENTO)
     return de.strftime("%d/%m/%Y"), hoje.strftime("%d/%m/%Y")
