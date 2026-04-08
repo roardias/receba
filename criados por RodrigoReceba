@@ -1,0 +1,36 @@
+[1mdiff --git a/frontend/src/app/dashboard/page.tsx b/frontend/src/app/dashboard/page.tsx[m
+[1mindex 0bfca44..6817b30 100644[m
+[1m--- a/frontend/src/app/dashboard/page.tsx[m
+[1m+++ b/frontend/src/app/dashboard/page.tsx[m
+[36m@@ -715,9 +715,11 @@[m [mexport default function DashboardPage() {[m
+       "Nome fantasia",[m
+       "Razão social",[m
+       "Grupo",[m
+[32m+[m[32m      "Empresa (interna)",[m
+       "Cód.",[m
+       "CNPJ/CPF",[m
+       "Nota fiscal",[m
+[32m+[m[32m      "Data de emissão",[m
+       "Data de vencimento",[m
+       "Status",[m
+       "Data último contato",[m
+[36m@@ -734,6 +736,7 @@[m [mexport default function DashboardPage() {[m
+         const statusLabel = info ? (STATUS_OPCOES.find((o) => o.value === info.status)?.label ?? info.status) : "Em cobrança";[m
+         const dataNeg = info?.status === "negociado_pagamento" && info?.data_negociado ? String(info.data_negociado).slice(0, 10) : "";[m
+         const statusTexto = dataNeg ? `${statusLabel} (${dataNeg})` : statusLabel;[m
+[32m+[m[32m        const dataEmissao = formatarData(r.det_ddtemissao);[m
+         const dataPrevisao = r.det_ddtprevisao ? new Date(r.det_ddtprevisao).toLocaleDateString("pt-BR") : "";[m
+         const dataUltimoContato = formatarData(r.data_ultimo_contato);[m
+         const valAtualizado = valorAtualizado(r.ValAberto_validado, r.qtde_dias);[m
+[36m@@ -741,9 +744,11 @@[m [mexport default function DashboardPage() {[m
+           r.nome_fantasia ?? "",[m
+           r.razao_social ?? "",[m
+           r.grupo_empresas ?? "",[m
+[32m+[m[32m          r.empresa ?? "",[m
+           r.codigo_nome_fantasia ?? "",[m
+           r.cnpj_cpf ?? "",[m
+           r.det_cnumdocfiscal ?? "",[m
+[32m+[m[32m          dataEmissao,[m
+           dataPrevisao,[m
+           statusTexto,[m
+           dataUltimoContato,[m

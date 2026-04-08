@@ -88,7 +88,8 @@ export async function GET(req: NextRequest) {
 
     // 2) Normalizar e filtrar agendamentos que batem neste minuto (qualquer api_tipo: clientes, categorias, movimento_financeiro, movimentos_geral, pagamentos_realizados, recebimentos_omie)
     const TIPOS_SYNC = ["clientes", "categorias", "movimento_financeiro", "movimentos_geral", "pagamentos_realizados", "recebimentos_omie"];
-    const alvos: { empresa_id: string; ag_id: string }[] = [];
+    // empresa_id -> Set de api_tipos (união de todos os agendamentos que batem e incluem essa empresa)
+    const apiTiposPorEmpresa = new Map<string, Set<string>>();
 
     for (const ag of lista) {
       // Empresas alvo: diretas (empresa_ids) ou via grupo (grupo_ids → empresas ativas do grupo)
@@ -144,11 +145,16 @@ export async function GET(req: NextRequest) {
         .map((h) => (h.length >= 5 ? h.slice(0, 5) : h)); // corta segundos
       if (!horariosNorm.includes(horario)) continue;
 
-      // Para este agendamento, todas as empresas (diretas ou do grupo)
+      const apisFiltrados = apis.filter((t) => TIPOS_SYNC.includes(t));
       for (const empId of empresaIds) {
-        alvos.push({ empresa_id: empId, ag_id: ag.id });
+        if (!apiTiposPorEmpresa.has(empId)) apiTiposPorEmpresa.set(empId, new Set());
+        apisFiltrados.forEach((t) => apiTiposPorEmpresa.get(empId)!.add(t));
       }
     }
+
+    const alvos: { empresa_id: string; api_tipos: string[] }[] = Array.from(apiTiposPorEmpresa.entries()).map(
+      ([empresa_id, set]) => ({ empresa_id, api_tipos: Array.from(set) })
+    );
 
     if (!alvos.length) {
       return NextResponse.json(
@@ -176,10 +182,12 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // 3) Chamar a Edge por empresa
+    // 3) Chamar a Edge por empresa (passa api_tipos para a Edge executar exatamente o que foi agendado)
     const results = await Promise.allSettled(
-      alvos.map(async ({ empresa_id }) => {
-        const url = `${EDGE_BASE_URL}?empresa_id=${encodeURIComponent(empresa_id)}`;
+      alvos.map(async ({ empresa_id, api_tipos }) => {
+        const params = new URLSearchParams({ empresa_id });
+        if (api_tipos.length) params.set("api_tipos", api_tipos.join(","));
+        const url = `${EDGE_BASE_URL}?${params.toString()}`;
         const res = await fetch(url, {
           method: "GET",
           headers: {

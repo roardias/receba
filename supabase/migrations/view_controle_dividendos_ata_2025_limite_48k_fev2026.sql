@@ -161,6 +161,5 @@ INNER JOIN controle_mes c ON c.cpf = det.cpf AND c.ano = det.ano AND c.mes = det
 WHERE c.saldo_ata_inicial > 0
 ORDER BY det.nome, det.ano, det.mes;
 
-COMMENT ON VIEW view_controle_dividendos_ata_2025 IS
-  'Controle até zerar saldo ata 2025 (Iris). Regras 1k e limite 50k (jan/26) ou 48k (fev/26+) só até zerar; depois competência=total do mês, baixa=0.';
-
+-- Opcional: rode em um segundo "Run" se o editor reclamar de multiplos comandos:
+-- COMMENT ON VIEW view_controle_dividendos_ata_2025 IS 'Limite 50k jan/26 e 48k fev/26+; regra 1k inalterada.';

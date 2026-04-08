@@ -131,13 +131,13 @@ def executar_sync_pagamentos_realizados_empresas(
     dDtPagtoAte: str | None = None,
 ) -> int:
     """Executa sync de pagamentos realizados para lista de empresas (usado pelo scheduler).
-    Datas para a API Omie: sempre fixas = hoje e hoje − 1 ano (ignoramos agendamento e env)."""
+    Datas para a API Omie: sempre fixas = hoje e hoje − ~2 anos (ignoramos agendamento e env)."""
     from scheduler_status import limpar_em_execucao, registrar_em_execucao
 
-    # Regra fixa: sempre usar hoje e 1 ano para trás (não usar datas do agendamento)
+    # Regra fixa: sempre usar hoje e ~2 anos para trás (não usar datas do agendamento)
     dDtPagtoDe, dDtPagtoAte = _datas_padrao_pagamento()
     prefix = f"  [{label}] " if label else "  "
-    print(f"{prefix}[Pagamentos Realizados] Omie: dDtPagtoDe={dDtPagtoDe!r} dDtPagtoAte={dDtPagtoAte!r} (período fixo: último ano)", flush=True)
+    print(f"{prefix}[Pagamentos Realizados] Omie: dDtPagtoDe={dDtPagtoDe!r} dDtPagtoAte={dDtPagtoAte!r} (período fixo: últimos ~2 anos)", flush=True)
 
     total = 0
     for emp in empresas:
