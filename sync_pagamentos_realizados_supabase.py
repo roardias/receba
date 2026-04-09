@@ -123,6 +123,14 @@ def registrar_log(supabase, empresa_nome: str, status: str, registros: int = 0, 
     }).execute()
 
 
+def limpar_tabela_pagamentos_realizados(supabase):
+    """
+    Remove todos os registros antes de uma nova carga completa.
+    A tabela usa id UUID obrigatório, então id != '' atende todas as linhas existentes.
+    """
+    supabase.table("pagamentos_realizados").delete().neq("id", "").execute()
+
+
 def executar_sync_pagamentos_realizados_empresas(
     supabase,
     empresas: list[dict],
@@ -138,6 +146,9 @@ def executar_sync_pagamentos_realizados_empresas(
     dDtPagtoDe, dDtPagtoAte = _datas_padrao_pagamento()
     prefix = f"  [{label}] " if label else "  "
     print(f"{prefix}[Pagamentos Realizados] Omie: dDtPagtoDe={dDtPagtoDe!r} dDtPagtoAte={dDtPagtoAte!r} (período fixo: últimos ~10 anos)", flush=True)
+
+    print(f"{prefix}[Pagamentos Realizados] Limpando tabela pagamentos_realizados antes do insert...", flush=True)
+    limpar_tabela_pagamentos_realizados(supabase)
 
     total = 0
     for emp in empresas:
@@ -251,6 +262,8 @@ def main():
         dDtPagtoDe, dDtPagtoAte = _datas_padrao_pagamento()
 
     supabase = create_client(url, key)
+    print("[Pagamentos Realizados] Limpando tabela pagamentos_realizados antes do insert...", flush=True)
+    limpar_tabela_pagamentos_realizados(supabase)
     total_geral = 0
 
     for i, cfg in enumerate(empresas, 1):
