@@ -126,9 +126,9 @@ def registrar_log(supabase, empresa_nome: str, status: str, registros: int = 0, 
 def limpar_tabela_pagamentos_realizados(supabase):
     """
     Remove todos os registros antes de uma nova carga completa.
-    A tabela usa id UUID obrigatório, então id != '' atende todas as linhas existentes.
+    Usa filtro por coluna texto para evitar erro de cast em UUID no PostgREST.
     """
-    supabase.table("pagamentos_realizados").delete().neq("id", "").execute()
+    supabase.table("pagamentos_realizados").delete().not_.is_("empresa", "null").execute()
 
 
 def executar_sync_pagamentos_realizados_empresas(
