@@ -23,10 +23,27 @@ type ClienteLinha = {
   porMes: Map<string, number>;
 };
 
+type MedicoIrRetidoRegistro = {
+  nome_medico: string;
+  cpf_apenas_numeros: string;
+  empresa: string;
+  competencia: string;
+  valor_ir_retido: number;
+};
+
 const MESES_LABEL = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 
 function formatarMoeda(val: number | null | undefined): string {
   if (val == null || val === 0) return "—";
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(val);
+}
+
+function formatarMoedaIrRetido(val: number): string {
   return new Intl.NumberFormat("pt-BR", {
     style: "currency",
     currency: "BRL",
@@ -50,6 +67,22 @@ function apenasNumeros(termo: string): string {
 
 function chaveMes(ano: number, mes: number): string {
   return `${ano}_${String(mes).padStart(2, "0")}`;
+}
+
+/** competencia no banco: 'YYYY-MM-01' → mesma chave das colunas da grade */
+function competenciaParaKm(competencia: string | null | undefined): string | null {
+  if (!competencia) return null;
+  const s = String(competencia).slice(0, 10);
+  const m = s.match(/^(\d{4})-(\d{2})-\d{2}$/);
+  if (!m) return null;
+  const ano = parseInt(m[1], 10);
+  const mes = parseInt(m[2], 10);
+  if (mes < 1 || mes > 12) return null;
+  return chaveMes(ano, mes);
+}
+
+function chaveIrRetidoCelula(empresa: string, docApenasNumeros: string, km: string): string {
+  return `${(empresa || "").trim()}|${docApenasNumeros.replace(/\D/g, "")}|${km}`;
 }
 
 function labelMes(ano: number, mes: number): string {
@@ -133,6 +166,9 @@ export default function PagamentosMedicosPage() {
   const [irValor, setIrValor] = useState("");
   const [irSalvando, setIrSalvando] = useState(false);
   const [irErroModal, setIrErroModal] = useState<string | null>(null);
+  /** Mapa empresa|doc|km_mês → valor IR retido (medico_ir_retido) */
+  const [irRetidoPorCelula, setIrRetidoPorCelula] = useState<Map<string, number>>(() => new Map());
+  const [irRetidoRegistros, setIrRetidoRegistros] = useState<MedicoIrRetidoRegistro[]>([]);
 
   const PAGE_SIZE = 1000; // Supabase retorna no máximo 1000 por consulta; buscar em páginas para trazer todos
 
@@ -198,34 +234,89 @@ export default function PagamentosMedicosPage() {
       setIrValor("");
       setMensagemView({ tipo: "ok", texto: "IR retido registrado com sucesso." });
       setTimeout(() => setMensagemView(null), 4000);
+      const { map, rows } = await fetchIrRetidoCompleto();
+      setIrRetidoPorCelula(map);
+      setIrRetidoRegistros(rows);
     } finally {
       setIrSalvando(false);
     }
   }
 
-  async function carregarDados() {
-    setLoading(true);
+  async function fetchViewRows(): Promise<ViewRow[]> {
     const todos: ViewRow[] = [];
     let offset = 0;
-    try {
-      while (true) {
-        const { data, error } = await supabase
-          .from("view_concimed_pagamentos_realizados")
-          .select("*")
-          .order("razao_social")
-          .order("ano", { ascending: true })
-          .order("mes", { ascending: true })
-          .range(offset, offset + PAGE_SIZE - 1);
-        if (error) {
-          console.error(error);
-          break;
-        }
-        const chunk = (data as ViewRow[]) ?? [];
-        todos.push(...chunk);
-        if (chunk.length < PAGE_SIZE) break;
-        offset += PAGE_SIZE;
+    while (true) {
+      const { data, error } = await supabase
+        .from("view_concimed_pagamentos_realizados")
+        .select("*")
+        .order("razao_social")
+        .order("ano", { ascending: true })
+        .order("mes", { ascending: true })
+        .range(offset, offset + PAGE_SIZE - 1);
+      if (error) {
+        console.error(error);
+        break;
       }
+      const chunk = (data as ViewRow[]) ?? [];
+      todos.push(...chunk);
+      if (chunk.length < PAGE_SIZE) break;
+      offset += PAGE_SIZE;
+    }
+    return todos;
+  }
+
+  async function fetchIrRetidoCompleto(): Promise<{
+    map: Map<string, number>;
+    rows: MedicoIrRetidoRegistro[];
+  }> {
+    const map = new Map<string, number>();
+    const rows: MedicoIrRetidoRegistro[] = [];
+    let offset = 0;
+    while (true) {
+      const { data, error } = await supabase
+        .from("medico_ir_retido")
+        .select("nome_medico, cpf_apenas_numeros, empresa, competencia, valor_ir_retido")
+        .range(offset, offset + PAGE_SIZE - 1);
+      if (error) {
+        console.error(error);
+        break;
+      }
+      const chunk =
+        (data as {
+          nome_medico: string;
+          cpf_apenas_numeros: string;
+          empresa: string;
+          competencia: string;
+          valor_ir_retido: number;
+        }[]) ?? [];
+      for (const row of chunk) {
+        const km = competenciaParaKm(row.competencia);
+        if (!km) continue;
+        const doc = apenasNumeros(String(row.cpf_apenas_numeros ?? ""));
+        const emp = String(row.empresa ?? "").trim();
+        const key = chaveIrRetidoCelula(emp, doc, km);
+        map.set(key, Number(row.valor_ir_retido) || 0);
+        rows.push({
+          nome_medico: String(row.nome_medico ?? "").trim() || "—",
+          cpf_apenas_numeros: doc,
+          empresa: emp,
+          competencia: String(row.competencia ?? "").slice(0, 10),
+          valor_ir_retido: Number(row.valor_ir_retido) || 0,
+        });
+      }
+      if (chunk.length < PAGE_SIZE) break;
+      offset += PAGE_SIZE;
+    }
+    return { map, rows };
+  }
+
+  async function carregarDados() {
+    setLoading(true);
+    try {
+      const [todos, { map, rows }] = await Promise.all([fetchViewRows(), fetchIrRetidoCompleto()]);
       setRows(todos);
+      setIrRetidoPorCelula(map);
+      setIrRetidoRegistros(rows);
     } finally {
       setLoading(false);
     }
@@ -395,31 +486,94 @@ export default function PagamentosMedicosPage() {
   }, [linhasOrdenadas]);
 
   function exportarExcel() {
-    const headers = ["Empresa", "Razão social", "CPF/CNPJ", "IR", ...colunasMesAno.map((km) => {
-      const [ano, mes] = km.split("_").map(Number);
-      return labelMes(ano, mes);
-    }), "Total"];
+    const filtroIrExport = (r: MedicoIrRetidoRegistro) => {
+      if (filtroAno !== ANO_TODOS) {
+        const y = parseInt(filtroAno, 10);
+        const km = competenciaParaKm(r.competencia);
+        if (!km) return false;
+        const [yy] = km.split("_").map(Number);
+        if (yy !== y) return false;
+      }
+      if (busca.trim()) {
+        const termo = busca.trim().toLowerCase();
+        const digitos = apenasNumeros(busca);
+        const bateNome = r.nome_medico.toLowerCase().includes(termo);
+        const bateDoc = digitos.length >= 11 && r.cpf_apenas_numeros.includes(digitos);
+        if (!bateNome && !bateDoc) return false;
+      }
+      return true;
+    };
+    const irExport = irRetidoRegistros.filter(filtroIrExport);
+
+    const kmSet = new Set<string>(colunasMesAno);
+    irExport.forEach((r) => {
+      const km = competenciaParaKm(r.competencia);
+      if (km) kmSet.add(km);
+    });
+    const colunasExport = Array.from(kmSet).sort((a, b) => {
+      const [aAno, aMes] = a.split("_").map(Number);
+      const [bAno, bMes] = b.split("_").map(Number);
+      return aAno !== bAno ? aAno - bAno : aMes - bMes;
+    });
+
+    const headers = [
+      "Empresa",
+      "Razão social",
+      "CPF/CNPJ",
+      "IR",
+      "Dividendos pagos",
+      ...colunasExport.map((km) => {
+        const [ano, mes] = km.split("_").map(Number);
+        return labelMes(ano, mes);
+      }),
+      "Total",
+    ];
     const data: (string | number)[][] = [headers];
+
     linhasOrdenadas.forEach((l) => {
       const row: (string | number)[] = [
         textoParaExcel(l.empresa),
         textoParaExcel(l.razao_social),
         textoParaExcel(l.cnpj_cpf_apenas_numeros),
         "",
+        "",
       ];
-      colunasMesAno.forEach((km) => row.push(Number(l.porMes.get(km)) || 0));
+      colunasExport.forEach((km) => row.push(Number(l.porMes.get(km)) || 0));
       row.push(Number(l.valor_total) || 0);
       data.push(row);
     });
+
     if (linhasOrdenadas.length > 0) {
-      const totalRow: (string | number)[] = ["Total", "", "", ""];
-      colunasMesAno.forEach((km) => totalRow.push(totais.porMes.get(km) ?? 0));
-      totalRow.push(totais.totalGeral);
+      const totalRow: (string | number)[] = ["Total", "", "", "", ""];
+      colunasExport.forEach((km) => {
+        let s = 0;
+        linhasOrdenadas.forEach((lin) => {
+          s += Number(lin.porMes.get(km)) || 0;
+        });
+        totalRow.push(s);
+      });
+      totalRow.push(linhasOrdenadas.reduce((acc, lin) => acc + (Number(lin.valor_total) || 0), 0));
       data.push(totalRow);
     }
+
+    irExport.forEach((r) => {
+      const km = competenciaParaKm(r.competencia);
+      const valor = Number(r.valor_ir_retido) || 0;
+      const row: (string | number)[] = [
+        textoParaExcel(r.empresa),
+        textoParaExcel(r.nome_medico),
+        textoParaExcel(r.cpf_apenas_numeros),
+        "",
+        "IR Retido",
+      ];
+      colunasExport.forEach((k) => row.push(k === km ? valor : 0));
+      row.push(valor);
+      data.push(row);
+    });
+
     const ws = XLSX.utils.aoa_to_sheet(data);
-    const colValorInicio = 4;
-    const colValorFim = 4 + colunasMesAno.length;
+    const colValorInicio = 5;
+    const colValorFim = 5 + colunasExport.length - 1;
     for (let row = 1; row <= data.length - 1; row++) {
       for (let col = colValorInicio; col <= colValorFim; col++) {
         const ref = XLSX.utils.encode_cell({ r: row, c: col });
@@ -473,7 +627,7 @@ export default function PagamentosMedicosPage() {
         <button
           type="button"
           onClick={exportarExcel}
-          disabled={linhasOrdenadas.length === 0}
+          disabled={linhasOrdenadas.length === 0 && irRetidoRegistros.length === 0}
           className="px-4 py-2 rounded bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Exportar Excel
@@ -588,12 +742,23 @@ export default function PagamentosMedicosPage() {
                     {colunasMesAno.map((km) => {
                       const val = l.porMes.get(km);
                       const acima50k = Number(val) > 50000;
+                      const docLinha = apenasNumeros(l.cnpj_cpf_apenas_numeros);
+                      const chaveIr = chaveIrRetidoCelula(l.empresa, docLinha, km);
+                      const irRetido = irRetidoPorCelula.get(chaveIr);
+                      const temIr = irRetido != null && !Number.isNaN(irRetido);
                       return (
                         <td
                           key={km}
-                          className={`p-2 text-right whitespace-nowrap bg-white group-hover:bg-sky-100 ${acima50k ? "text-red-600 font-semibold !bg-red-50 group-hover:!bg-red-50" : ""}`}
+                          className={`p-2 text-right align-top bg-white group-hover:bg-sky-100 ${acima50k ? "text-red-600 font-semibold !bg-red-50 group-hover:!bg-red-50" : ""}`}
                         >
-                          {formatarMoeda(val)}
+                          <div className="flex flex-col items-end gap-0.5 min-h-[2.5rem] justify-center">
+                            <span className="whitespace-nowrap">{formatarMoeda(val)}</span>
+                            {temIr && (
+                              <span className="text-[10px] leading-tight text-slate-500 font-normal whitespace-nowrap">
+                                IR retido {formatarMoedaIrRetido(irRetido)}
+                              </span>
+                            )}
+                          </div>
                         </td>
                       );
                     })}
