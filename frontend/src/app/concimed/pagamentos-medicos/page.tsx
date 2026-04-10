@@ -31,6 +31,14 @@ type MedicoIrRetidoRegistro = {
   valor_ir_retido: number;
 };
 
+type IrEdicaoContexto = {
+  empresa: string;
+  doc: string;
+  km: string;
+  valorAtual: number;
+  razaoSocial: string;
+};
+
 const MESES_LABEL = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 
 function formatarMoeda(val: number | null | undefined): string {
@@ -83,6 +91,13 @@ function competenciaParaKm(competencia: string | null | undefined): string | nul
 
 function chaveIrRetidoCelula(empresa: string, docApenasNumeros: string, km: string): string {
   return `${(empresa || "").trim()}|${docApenasNumeros.replace(/\D/g, "")}|${km}`;
+}
+
+/** km tipo 2024_03 → data competência ISO para o banco */
+function kmParaCompetenciaIso(km: string): string | null {
+  const [ano, mes] = km.split("_").map(Number);
+  if (!ano || mes < 1 || mes > 12) return null;
+  return `${ano}-${String(mes).padStart(2, "0")}-01`;
 }
 
 function labelMes(ano: number, mes: number): string {
@@ -170,6 +185,11 @@ export default function PagamentosMedicosPage() {
   const [irRetidoPorCelula, setIrRetidoPorCelula] = useState<Map<string, number>>(() => new Map());
   const [irRetidoRegistros, setIrRetidoRegistros] = useState<MedicoIrRetidoRegistro[]>([]);
 
+  const [irEditarCtx, setIrEditarCtx] = useState<IrEdicaoContexto | null>(null);
+  const [irEditarValor, setIrEditarValor] = useState("");
+  const [irEditarSalvando, setIrEditarSalvando] = useState(false);
+  const [irEditarErro, setIrEditarErro] = useState<string | null>(null);
+
   const PAGE_SIZE = 1000; // Supabase retorna no máximo 1000 por consulta; buscar em páginas para trazer todos
 
   function abrirModalIr(l: ClienteLinha) {
@@ -239,6 +259,74 @@ export default function PagamentosMedicosPage() {
       setIrRetidoRegistros(rows);
     } finally {
       setIrSalvando(false);
+    }
+  }
+
+  function abrirEditarIr(l: ClienteLinha, km: string, valorAtual: number) {
+    const doc = apenasNumeros(l.cnpj_cpf_apenas_numeros);
+    if (!documentoValido11ou14(doc)) return;
+    if (!kmParaCompetenciaIso(km)) return;
+    setIrEditarCtx({
+      empresa: (l.empresa || "").trim(),
+      doc,
+      km,
+      valorAtual,
+      razaoSocial: (l.razao_social || "").trim() || "—",
+    });
+    setIrEditarValor(
+      new Intl.NumberFormat("pt-BR", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }).format(valorAtual)
+    );
+    setIrEditarErro(null);
+  }
+
+  function fecharEditarIr() {
+    if (irEditarSalvando) return;
+    setIrEditarCtx(null);
+    setIrEditarErro(null);
+  }
+
+  async function salvarEdicaoIrRetido() {
+    if (!irEditarCtx) return;
+    setIrEditarErro(null);
+    const competencia = kmParaCompetenciaIso(irEditarCtx.km);
+    if (!competencia) {
+      setIrEditarErro("Competência inválida.");
+      return;
+    }
+    const valorNum = parseValorMonetarioBr(irEditarValor);
+    if (valorNum == null || valorNum < 0) {
+      setIrEditarErro("Informe um valor válido (ex.: 1.234,56).");
+      return;
+    }
+
+    setIrEditarSalvando(true);
+    try {
+      const { data, error } = await supabase
+        .from("medico_ir_retido")
+        .update({ valor_ir_retido: valorNum })
+        .eq("cpf_apenas_numeros", irEditarCtx.doc)
+        .eq("empresa", irEditarCtx.empresa)
+        .eq("competencia", competencia)
+        .select("id");
+      if (error) {
+        setIrEditarErro(error.message || "Erro ao atualizar.");
+        return;
+      }
+      if (!data?.length) {
+        setIrEditarErro("Registro não encontrado. Atualize a página.");
+        return;
+      }
+      setIrEditarCtx(null);
+      setMensagemView({ tipo: "ok", texto: "IR retido atualizado." });
+      setTimeout(() => setMensagemView(null), 3000);
+      const { map, rows } = await fetchIrRetidoCompleto();
+      setIrRetidoPorCelula(map);
+      setIrRetidoRegistros(rows);
+    } finally {
+      setIrEditarSalvando(false);
     }
   }
 
@@ -337,6 +425,18 @@ export default function PagamentosMedicosPage() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [irModalLinha, irSalvando]);
+
+  useEffect(() => {
+    if (!irEditarCtx) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !irEditarSalvando) {
+        setIrEditarCtx(null);
+        setIrEditarErro(null);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [irEditarCtx, irEditarSalvando]);
 
   async function atualizarView() {
     setMensagemView(null);
@@ -738,9 +838,17 @@ export default function PagamentosMedicosPage() {
                           <div className="flex flex-col items-end gap-0.5 min-h-[2.5rem] justify-center">
                             <span className="whitespace-nowrap">{formatarMoeda(val)}</span>
                             {temIr && (
-                              <span className="text-[10px] leading-tight text-slate-500 font-normal whitespace-nowrap">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  abrirEditarIr(l, km, irRetido);
+                                }}
+                                className="text-[10px] leading-tight text-amber-900/90 font-normal whitespace-nowrap underline decoration-dotted decoration-amber-700/60 underline-offset-2 hover:text-amber-950 hover:decoration-solid text-right max-w-full"
+                                title="Clique para editar o IR retido"
+                              >
                                 IR retido {formatarMoedaIrRetido(irRetido)}
-                              </span>
+                              </button>
                             )}
                           </div>
                         </td>
@@ -864,6 +972,96 @@ export default function PagamentosMedicosPage() {
                   className="px-4 py-2 rounded bg-amber-600 text-white font-medium hover:bg-amber-700 disabled:opacity-50"
                 >
                   {irSalvando ? "Salvando..." : "Salvar"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {irEditarCtx && (
+        <div
+          className="fixed inset-0 z-[101] flex items-center justify-center p-4 bg-black/40"
+          role="presentation"
+          onClick={(e) => e.target === e.currentTarget && fecharEditarIr()}
+        >
+          <div
+            className="bg-white rounded-lg shadow-xl max-w-md w-full border border-slate-200"
+            role="dialog"
+            aria-labelledby="ir-edit-titulo"
+            aria-modal="true"
+          >
+            <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between gap-2">
+              <h2 id="ir-edit-titulo" className="text-lg font-semibold text-slate-800">
+                Editar IR retido
+              </h2>
+              <button
+                type="button"
+                onClick={fecharEditarIr}
+                disabled={irEditarSalvando}
+                className="text-slate-500 hover:text-slate-800 text-xl leading-none px-1 disabled:opacity-50"
+                aria-label="Fechar"
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-4 space-y-4 text-sm">
+              <div>
+                <span className="text-slate-500 block text-xs uppercase tracking-wide">Nome</span>
+                <p className="text-slate-900 font-medium">{irEditarCtx.razaoSocial}</p>
+              </div>
+              <div>
+                <span className="text-slate-500 block text-xs uppercase tracking-wide">CPF/CNPJ</span>
+                <p className="text-slate-900">{formatarCnpjCpf(irEditarCtx.doc)}</p>
+              </div>
+              <div>
+                <span className="text-slate-500 block text-xs uppercase tracking-wide">Empresa</span>
+                <p className="text-slate-900">{irEditarCtx.empresa || "—"}</p>
+              </div>
+              <div>
+                <span className="text-slate-500 block text-xs uppercase tracking-wide">Competência</span>
+                <p className="text-slate-900 font-medium">
+                  {labelMes(
+                    Number(irEditarCtx.km.split("_")[0]),
+                    Number(irEditarCtx.km.split("_")[1])
+                  )}
+                </p>
+              </div>
+              <div>
+                <label htmlFor="ir-edit-valor" className="block text-slate-700 font-medium mb-1">
+                  Novo valor do IR retido (R$)
+                </label>
+                <input
+                  id="ir-edit-valor"
+                  type="text"
+                  inputMode="decimal"
+                  value={irEditarValor}
+                  onChange={(e) => setIrEditarValor(e.target.value)}
+                  className="w-full border border-slate-300 rounded px-3 py-2"
+                  autoComplete="off"
+                />
+              </div>
+              {irEditarErro && (
+                <p className="text-red-600 text-sm" role="alert">
+                  {irEditarErro}
+                </p>
+              )}
+              <div className="flex gap-2 justify-end pt-2">
+                <button
+                  type="button"
+                  onClick={fecharEditarIr}
+                  disabled={irEditarSalvando}
+                  className="px-4 py-2 rounded border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={salvarEdicaoIrRetido}
+                  disabled={irEditarSalvando}
+                  className="px-4 py-2 rounded bg-amber-600 text-white font-medium hover:bg-amber-700 disabled:opacity-50"
+                >
+                  {irEditarSalvando ? "Salvando..." : "Salvar"}
                 </button>
               </div>
             </div>
