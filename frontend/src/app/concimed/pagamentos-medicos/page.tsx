@@ -839,30 +839,18 @@ export default function PagamentosMedicosPage() {
         doc.text("Dividendos pagos (por empresa)", margin, startY);
         startY += 4;
 
-        const colTotalsDiv = colunasExport.map((km) =>
-          linhasDoc.reduce((s, l) => s + (Number(l.porMes.get(km)) || 0), 0)
-        );
         const bodyDiv = linhasDoc.map((l) => {
           const cells = colunasExport.map((km) => moedaPdf(Number(l.porMes.get(km)) || 0));
-          const rowTot = colunasExport.reduce((s, km) => s + (Number(l.porMes.get(km)) || 0), 0);
-          return [textoParaExcel(l.empresa), ...cells, moedaPdf(rowTot)];
+          return [textoParaExcel(l.empresa), ...cells];
         });
-        const footDiv: string[] = [
-          "Total",
-          ...colTotalsDiv.map(moedaPdf),
-          moedaPdf(colTotalsDiv.reduce((a, b) => a + b, 0)),
-        ];
 
         autoTable(doc, {
           startY,
-          head: [["Empresa", ...mesLabels, "Total"]],
+          head: [["Empresa", ...mesLabels]],
           body: bodyDiv,
-          foot: [footDiv],
-          showFoot: "lastPage",
           theme: "grid",
           styles: { fontSize: 6, cellPadding: 0.8 },
           headStyles: { fillColor: [71, 85, 105] },
-          footStyles: { fillColor: [226, 232, 240], fontStyle: "bold" },
           margin: { left: margin, right: margin },
         });
         startY = ((doc as DocWithLastTable).lastAutoTable?.finalY ?? startY) + gap;
@@ -887,28 +875,16 @@ export default function PagamentosMedicosPage() {
 
           const bodyIr = Array.from(porEmpresaIr.entries()).map(([empresa, mesMap]) => {
             const cells = colunasExport.map((km) => moedaPdf(Number(mesMap.get(km)) || 0));
-            const rowTot = colunasExport.reduce((s, km) => s + (Number(mesMap.get(km)) || 0), 0);
-            return [textoParaExcel(empresa), ...cells, moedaPdf(rowTot)];
+            return [textoParaExcel(empresa), ...cells];
           });
-          const colTotalsIr = colunasExport.map((km) =>
-            Array.from(porEmpresaIr.values()).reduce((s, m) => s + (Number(m.get(km)) || 0), 0)
-          );
-          const footIr: string[] = [
-            "Total",
-            ...colTotalsIr.map(moedaPdf),
-            moedaPdf(colTotalsIr.reduce((a, b) => a + b, 0)),
-          ];
 
           autoTable(doc, {
             startY,
-            head: [["Empresa", ...mesLabels, "Total"]],
+            head: [["Empresa", ...mesLabels]],
             body: bodyIr,
-            foot: [footIr],
-            showFoot: "lastPage",
             theme: "grid",
             styles: { fontSize: 6, cellPadding: 0.8 },
             headStyles: { fillColor: [100, 116, 139] },
-            footStyles: { fillColor: [226, 232, 240], fontStyle: "bold" },
             margin: { left: margin, right: margin },
           });
           startY = ((doc as DocWithLastTable).lastAutoTable?.finalY ?? startY) + gap;
@@ -936,26 +912,16 @@ export default function PagamentosMedicosPage() {
 
     const summaryBody = colunasExport.map((km, i) => {
       const [ano, mes] = km.split("_").map(Number);
-      return [
-        labelMes(ano, mes),
-        moedaPdf(totaisDivPorKm[i]),
-        moedaPdf(totaisIrPorKm[i]),
-        moedaPdf(totaisDivPorKm[i] + totaisIrPorKm[i]),
-      ];
+      return [labelMes(ano, mes), moedaPdf(totaisDivPorKm[i]), moedaPdf(totaisIrPorKm[i])];
     });
-    const sumDiv = totaisDivPorKm.reduce((a, b) => a + b, 0);
-    const sumIr = totaisIrPorKm.reduce((a, b) => a + b, 0);
 
     autoTable(doc, {
       startY,
-      head: [["Mês/ano", "Dividendos pagos", "IR retido", "Total"]],
+      head: [["Mês/ano", "Dividendos pagos", "IR retido"]],
       body: summaryBody,
-      foot: [["Total geral", moedaPdf(sumDiv), moedaPdf(sumIr), moedaPdf(sumDiv + sumIr)]],
-      showFoot: "lastPage",
       theme: "grid",
       styles: { fontSize: 8, cellPadding: 1 },
       headStyles: { fillColor: [30, 41, 59] },
-      footStyles: { fillColor: [226, 232, 240], fontStyle: "bold" },
       margin: { left: margin, right: margin },
     });
 
