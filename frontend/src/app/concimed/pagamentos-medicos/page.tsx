@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
 import { supabase } from "@/lib/supabase";
 
@@ -112,8 +114,76 @@ function textoParaExcel(s: string | null | undefined): string {
     .trim();
 }
 
+function moedaPdf(n: number): string {
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(n);
+}
+
+/** Logo em `public/concimed/logo.svg` — usada só no PDF. */
+const CONCIMED_LOGO_SVG_PATH = "/concimed/logo.svg";
+
+function parseSvgLength(attr: string | null): number {
+  if (!attr) return 0;
+  const n = parseFloat(String(attr).replace(/px$/i, "").trim());
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** Converte SVG (mesma origem) em PNG data URL para o jsPDF. Retorna null se o arquivo não existir ou falhar. */
+async function carregarLogoConcimedPngDataUrl(): Promise<string | null> {
+  if (typeof window === "undefined") return null;
+  try {
+    const res = await fetch(CONCIMED_LOGO_SVG_PATH);
+    if (!res.ok) return null;
+    const svgText = await res.text();
+    const parsed = new DOMParser().parseFromString(svgText, "image/svg+xml");
+    const root = parsed.documentElement;
+    let w = parseSvgLength(root.getAttribute("width"));
+    let h = parseSvgLength(root.getAttribute("height"));
+    const vb = root.getAttribute("viewBox");
+    if (vb) {
+      const p = vb.trim().split(/[\s,]+/).map(Number);
+      if (p.length >= 4) {
+        if (!w) w = p[2];
+        if (!h) h = p[3];
+      }
+    }
+    if (!w || !h) {
+      w = 320;
+      h = 96;
+    }
+    const blob = new Blob([svgText], { type: "image/svg+xml;charset=utf-8" });
+    const objUrl = URL.createObjectURL(blob);
+    const img = new Image();
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error("logo svg"));
+      img.src = objUrl;
+    });
+    const canvas = document.createElement("canvas");
+    const scale = 2;
+    canvas.width = Math.ceil(w * scale);
+    canvas.height = Math.ceil(h * scale);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      URL.revokeObjectURL(objUrl);
+      return null;
+    }
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.scale(scale, scale);
+    ctx.drawImage(img, 0, 0, w, h);
+    URL.revokeObjectURL(objUrl);
+    return canvas.toDataURL("image/png");
+  } catch {
+    return null;
+  }
+}
+
 const FORMATO_NUMERO_BR = "#.##0,00";
-const ANO_TODOS = "";
 type OrdenarPor = "razao_social" | "cnpj_cpf" | "total" | `mes:${string}`;
 
 function mesAtualYYYYMM(): string {
@@ -170,7 +240,8 @@ export default function PagamentosMedicosPage() {
   const [rows, setRows] = useState<ViewRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [busca, setBusca] = useState("");
-  const [filtroAno, setFiltroAno] = useState<string>(ANO_TODOS);
+  /** Vazio = todos os anos; senão apenas os anos listados (string "2023", "2024", …) */
+  const [anosFiltro, setAnosFiltro] = useState<string[]>([]);
   const [ordenarPor, setOrdenarPor] = useState<OrdenarPor>("razao_social");
   const [ordemAsc, setOrdemAsc] = useState(true);
   const [atualizandoView, setAtualizandoView] = useState(false);
@@ -458,9 +529,7 @@ export default function PagamentosMedicosPage() {
 
   const { linhas, colunasMesAno, anosDisponiveis } = useMemo(() => {
     const rowsFiltradas =
-      filtroAno !== ANO_TODOS
-        ? rows.filter((r) => r.ano === parseInt(filtroAno, 10))
-        : rows;
+      anosFiltro.length > 0 ? rows.filter((r) => anosFiltro.includes(String(r.ano))) : rows;
 
     const anosSet = new Set<number>();
     rows.forEach((r) => anosSet.add(r.ano));
@@ -519,7 +588,7 @@ export default function PagamentosMedicosPage() {
 
     // Ordenação aplicada depois (por estado ordenarPor/ordemAsc)
     return { linhas: linhasFiltradas, colunasMesAno, anosDisponiveis };
-  }, [rows, busca, filtroAno]);
+  }, [rows, busca, anosFiltro]);
 
   const linhasOrdenadas = useMemo(() => {
     const ord = [...linhas];
@@ -585,14 +654,13 @@ export default function PagamentosMedicosPage() {
     return { porMes, totalGeral };
   }, [linhasOrdenadas]);
 
-  function exportarExcel() {
+  const contextoExportacao = useMemo(() => {
     const filtroIrExport = (r: MedicoIrRetidoRegistro) => {
-      if (filtroAno !== ANO_TODOS) {
-        const y = parseInt(filtroAno, 10);
+      if (anosFiltro.length > 0) {
         const km = competenciaParaKm(r.competencia);
         if (!km) return false;
         const [yy] = km.split("_").map(Number);
-        if (yy !== y) return false;
+        if (!anosFiltro.includes(String(yy))) return false;
       }
       if (busca.trim()) {
         const termo = busca.trim().toLowerCase();
@@ -604,7 +672,6 @@ export default function PagamentosMedicosPage() {
       return true;
     };
     const irExport = irRetidoRegistros.filter(filtroIrExport);
-
     const kmSet = new Set<string>(colunasMesAno);
     irExport.forEach((r) => {
       const km = competenciaParaKm(r.competencia);
@@ -615,12 +682,16 @@ export default function PagamentosMedicosPage() {
       const [bAno, bMes] = b.split("_").map(Number);
       return aAno !== bAno ? aAno - bAno : aMes - bMes;
     });
+    return { irExport, colunasExport };
+  }, [irRetidoRegistros, colunasMesAno, anosFiltro, busca]);
+
+  function exportarExcel() {
+    const { irExport, colunasExport } = contextoExportacao;
 
     const headers = [
       "Empresa",
       "Razão social",
       "CPF/CNPJ",
-      "IR",
       "Tipo de pagamento",
       ...colunasExport.map((km) => {
         const [ano, mes] = km.split("_").map(Number);
@@ -634,7 +705,6 @@ export default function PagamentosMedicosPage() {
         textoParaExcel(l.empresa),
         textoParaExcel(l.razao_social),
         textoParaExcel(l.cnpj_cpf_apenas_numeros),
-        "",
         "Dividendos pagos",
       ];
       colunasExport.forEach((km) => row.push(Number(l.porMes.get(km)) || 0));
@@ -648,7 +718,6 @@ export default function PagamentosMedicosPage() {
         textoParaExcel(r.empresa),
         textoParaExcel(r.nome_medico),
         textoParaExcel(r.cpf_apenas_numeros),
-        "",
         "IR Retido",
       ];
       colunasExport.forEach((k) => row.push(k === km ? valor : 0));
@@ -656,8 +725,8 @@ export default function PagamentosMedicosPage() {
     });
 
     const ws = XLSX.utils.aoa_to_sheet(data);
-    const colValorInicio = 5;
-    const colValorFim = 5 + colunasExport.length - 1;
+    const colValorInicio = 4;
+    const colValorFim = 4 + colunasExport.length - 1;
     for (let row = 1; row <= data.length - 1; row++) {
       for (let col = colValorInicio; col <= colValorFim; col++) {
         const ref = XLSX.utils.encode_cell({ r: row, c: col });
@@ -671,12 +740,242 @@ export default function PagamentosMedicosPage() {
     XLSX.writeFile(wb, "pagamentos-realizados-concimed.xlsx");
   }
 
-  // Atualiza anos no select ao carregar (primeira vez); mantém "Todos" se já estava
-  const opcoesAno = useMemo(() => {
-    const list = [{ value: ANO_TODOS, label: "Todos os anos" }];
-    anosDisponiveis.forEach((a) => list.push({ value: String(a), label: String(a) }));
-    return list;
-  }, [anosDisponiveis]);
+  async function gerarPdfRelatorio() {
+    const { irExport, colunasExport } = contextoExportacao;
+    if (colunasExport.length === 0) {
+      window.alert("Não há colunas de mês/ano para montar o relatório. Verifique os filtros e os dados.");
+      return;
+    }
+
+    const mesLabels = colunasExport.map((km) => {
+      const [ano, mes] = km.split("_").map(Number);
+      return labelMes(ano, mes);
+    });
+
+    const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+    const margin = 10;
+    let startY = 12;
+    const gap = 5;
+    const pageH = doc.internal.pageSize.getHeight();
+
+    function ensureSpace(minBelowStartY: number) {
+      if (startY + minBelowStartY > pageH - margin) {
+        doc.addPage();
+        startY = margin;
+      }
+    }
+
+    const resumoAnosFiltroPdf =
+      anosFiltro.length === 0
+        ? "Todos os anos"
+        : anosFiltro
+            .slice()
+            .sort((a, b) => Number(b) - Number(a))
+            .join(", ");
+
+    const logoPng = await carregarLogoConcimedPngDataUrl();
+    if (logoPng) {
+      const maxWmm = 42;
+      const props = doc.getImageProperties(logoPng);
+      const imgHmm = (props.height * maxWmm) / props.width;
+      doc.addImage(logoPng, "PNG", margin, startY, maxWmm, imgHmm);
+      startY += imgHmm + 5;
+    }
+
+    doc.setFontSize(14);
+    doc.text("Pagamentos realizados — Concimed", margin, startY);
+    startY += 7;
+    doc.setFontSize(9);
+    doc.text(`Gerado em ${new Date().toLocaleString("pt-BR")}`, margin, startY);
+    startY += 5;
+    doc.text(`Ano(s): ${resumoAnosFiltroPdf}`, margin, startY);
+    startY += 4;
+    if (busca.trim()) {
+      doc.text(`Busca: ${busca.trim()}`, margin, startY);
+      startY += 4;
+    }
+    startY += gap;
+
+    function nomePorDoc(d: string): string {
+      const linha = linhasOrdenadas.find((l) => apenasNumeros(l.cnpj_cpf_apenas_numeros) === d);
+      if (linha?.razao_social?.trim()) return linha.razao_social.trim();
+      const ir = irExport.find((x) => apenasNumeros(x.cpf_apenas_numeros) === d);
+      return (ir?.nome_medico || "").trim() || d;
+    }
+
+    const docKeys = new Set<string>();
+    linhasOrdenadas.forEach((l) => {
+      const d = apenasNumeros(l.cnpj_cpf_apenas_numeros);
+      if (d) docKeys.add(d);
+    });
+    irExport.forEach((r) => {
+      const d = apenasNumeros(r.cpf_apenas_numeros);
+      if (d) docKeys.add(d);
+    });
+
+    const sortedDocs = Array.from(docKeys).sort((a, b) => {
+      const na = nomePorDoc(a).toLowerCase();
+      const nb = nomePorDoc(b).toLowerCase();
+      if (na !== nb) return na.localeCompare(nb, "pt-BR");
+      return a.localeCompare(b);
+    });
+
+    type DocWithLastTable = jsPDF & { lastAutoTable?: { finalY: number } };
+
+    for (const d of sortedDocs) {
+      const linhasDoc = linhasOrdenadas.filter((l) => apenasNumeros(l.cnpj_cpf_apenas_numeros) === d);
+      const irDoc = irExport.filter((r) => apenasNumeros(r.cpf_apenas_numeros) === d);
+
+      ensureSpace(28);
+      doc.setFontSize(11);
+      doc.text(nomePorDoc(d), margin, startY);
+      startY += 5;
+      doc.setFontSize(9);
+      doc.text(`CPF/CNPJ: ${formatarCnpjCpf(d)}`, margin, startY);
+      startY += 7;
+
+      if (linhasDoc.length > 0) {
+        doc.setFontSize(9);
+        doc.text("Dividendos pagos (por empresa)", margin, startY);
+        startY += 4;
+
+        const colTotalsDiv = colunasExport.map((km) =>
+          linhasDoc.reduce((s, l) => s + (Number(l.porMes.get(km)) || 0), 0)
+        );
+        const bodyDiv = linhasDoc.map((l) => {
+          const cells = colunasExport.map((km) => moedaPdf(Number(l.porMes.get(km)) || 0));
+          const rowTot = colunasExport.reduce((s, km) => s + (Number(l.porMes.get(km)) || 0), 0);
+          return [textoParaExcel(l.empresa), ...cells, moedaPdf(rowTot)];
+        });
+        const footDiv: string[] = [
+          "Total",
+          ...colTotalsDiv.map(moedaPdf),
+          moedaPdf(colTotalsDiv.reduce((a, b) => a + b, 0)),
+        ];
+
+        autoTable(doc, {
+          startY,
+          head: [["Empresa", ...mesLabels, "Total"]],
+          body: bodyDiv,
+          foot: [footDiv],
+          showFoot: "lastPage",
+          theme: "grid",
+          styles: { fontSize: 6, cellPadding: 0.8 },
+          headStyles: { fillColor: [71, 85, 105] },
+          footStyles: { fillColor: [226, 232, 240], fontStyle: "bold" },
+          margin: { left: margin, right: margin },
+        });
+        startY = ((doc as DocWithLastTable).lastAutoTable?.finalY ?? startY) + gap;
+      }
+
+      if (irDoc.length > 0) {
+        const porEmpresaIr = new Map<string, Map<string, number>>();
+        irDoc.forEach((r) => {
+          const km = competenciaParaKm(r.competencia);
+          if (!km || !colunasExport.includes(km)) return;
+          const em = (r.empresa || "").trim() || "—";
+          if (!porEmpresaIr.has(em)) porEmpresaIr.set(em, new Map());
+          const m = porEmpresaIr.get(em)!;
+          m.set(km, (m.get(km) ?? 0) + (Number(r.valor_ir_retido) || 0));
+        });
+
+        if (porEmpresaIr.size > 0) {
+          ensureSpace(22);
+          doc.setFontSize(9);
+          doc.text("IR retido (por empresa)", margin, startY);
+          startY += 4;
+
+          const bodyIr = Array.from(porEmpresaIr.entries()).map(([empresa, mesMap]) => {
+            const cells = colunasExport.map((km) => moedaPdf(Number(mesMap.get(km)) || 0));
+            const rowTot = colunasExport.reduce((s, km) => s + (Number(mesMap.get(km)) || 0), 0);
+            return [textoParaExcel(empresa), ...cells, moedaPdf(rowTot)];
+          });
+          const colTotalsIr = colunasExport.map((km) =>
+            Array.from(porEmpresaIr.values()).reduce((s, m) => s + (Number(m.get(km)) || 0), 0)
+          );
+          const footIr: string[] = [
+            "Total",
+            ...colTotalsIr.map(moedaPdf),
+            moedaPdf(colTotalsIr.reduce((a, b) => a + b, 0)),
+          ];
+
+          autoTable(doc, {
+            startY,
+            head: [["Empresa", ...mesLabels, "Total"]],
+            body: bodyIr,
+            foot: [footIr],
+            showFoot: "lastPage",
+            theme: "grid",
+            styles: { fontSize: 6, cellPadding: 0.8 },
+            headStyles: { fillColor: [100, 116, 139] },
+            footStyles: { fillColor: [226, 232, 240], fontStyle: "bold" },
+            margin: { left: margin, right: margin },
+          });
+          startY = ((doc as DocWithLastTable).lastAutoTable?.finalY ?? startY) + gap;
+        }
+      }
+
+      startY += 2;
+    }
+
+    ensureSpace(35);
+    doc.setFontSize(11);
+    doc.text("Totais por mês/ano e tipo de pagamento", margin, startY);
+    startY += 6;
+
+    const totaisDivPorKm = colunasExport.map((km) =>
+      linhasOrdenadas.reduce((s, l) => s + (Number(l.porMes.get(km)) || 0), 0)
+    );
+    const totaisIrPorKm = colunasExport.map((km) => {
+      let s = 0;
+      irExport.forEach((r) => {
+        if (competenciaParaKm(r.competencia) === km) s += Number(r.valor_ir_retido) || 0;
+      });
+      return s;
+    });
+
+    const summaryBody = colunasExport.map((km, i) => {
+      const [ano, mes] = km.split("_").map(Number);
+      return [
+        labelMes(ano, mes),
+        moedaPdf(totaisDivPorKm[i]),
+        moedaPdf(totaisIrPorKm[i]),
+        moedaPdf(totaisDivPorKm[i] + totaisIrPorKm[i]),
+      ];
+    });
+    const sumDiv = totaisDivPorKm.reduce((a, b) => a + b, 0);
+    const sumIr = totaisIrPorKm.reduce((a, b) => a + b, 0);
+
+    autoTable(doc, {
+      startY,
+      head: [["Mês/ano", "Dividendos pagos", "IR retido", "Total"]],
+      body: summaryBody,
+      foot: [["Total geral", moedaPdf(sumDiv), moedaPdf(sumIr), moedaPdf(sumDiv + sumIr)]],
+      showFoot: "lastPage",
+      theme: "grid",
+      styles: { fontSize: 8, cellPadding: 1 },
+      headStyles: { fillColor: [30, 41, 59] },
+      footStyles: { fillColor: [226, 232, 240], fontStyle: "bold" },
+      margin: { left: margin, right: margin },
+    });
+
+    doc.save("pagamentos-realizados-concimed.pdf");
+  }
+
+  function toggleAnoFiltro(anoStr: string) {
+    setAnosFiltro((prev) => {
+      if (prev.includes(anoStr)) return prev.filter((a) => a !== anoStr);
+      return [...prev, anoStr].sort((a, b) => Number(b) - Number(a));
+    });
+  }
+
+  const resumoAnosFiltro =
+    anosFiltro.length === 0
+      ? "Todos os anos"
+      : anosFiltro
+          .slice()
+          .sort((a, b) => Number(b) - Number(a))
+          .join(", ");
 
   return (
     <div className="p-4 max-w-full">
@@ -686,20 +985,44 @@ export default function PagamentosMedicosPage() {
       </p>
 
       <div className="mt-4 flex flex-wrap gap-4 items-center">
-        <label className="flex items-center gap-2">
-          <span className="text-slate-600 text-sm">Ano:</span>
-          <select
-            value={filtroAno}
-            onChange={(e) => setFiltroAno(e.target.value)}
-            className="border border-slate-300 rounded px-3 py-2"
-          >
-            {opcoesAno.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="flex items-start gap-2">
+          <span className="text-slate-600 text-sm pt-2 shrink-0">Ano(s):</span>
+          <details className="relative group border border-slate-300 rounded bg-white min-w-[200px]">
+            <summary className="cursor-pointer list-none px-3 py-2 pr-8 text-sm text-slate-800 hover:bg-slate-50 rounded [&::-webkit-details-marker]:hidden">
+              <span className="block truncate max-w-[240px]" title={resumoAnosFiltro}>
+                {resumoAnosFiltro}
+              </span>
+            </summary>
+            <div className="absolute left-0 top-full mt-1 z-50 min-w-full max-h-64 overflow-y-auto rounded border border-slate-200 bg-white py-2 shadow-lg">
+              <button
+                type="button"
+                onClick={() => setAnosFiltro([])}
+                className="w-full text-left px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100"
+              >
+                Todos os anos
+              </button>
+              <div className="border-t border-slate-100 my-1" />
+              {anosDisponiveis.map((a) => {
+                const s = String(a);
+                const marcado = anosFiltro.includes(s);
+                return (
+                  <label
+                    key={s}
+                    className="flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer hover:bg-slate-50"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={marcado}
+                      onChange={() => toggleAnoFiltro(s)}
+                      className="rounded border-slate-300"
+                    />
+                    <span>{s}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </details>
+        </div>
         <input
           type="text"
           placeholder="Buscar por razão social ou CPF/CNPJ"
@@ -711,10 +1034,21 @@ export default function PagamentosMedicosPage() {
         <button
           type="button"
           onClick={exportarExcel}
-          disabled={linhasOrdenadas.length === 0 && irRetidoRegistros.length === 0}
+          disabled={linhasOrdenadas.length === 0 && contextoExportacao.irExport.length === 0}
           className="px-4 py-2 rounded bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Exportar Excel
+        </button>
+        <button
+          type="button"
+          onClick={() => void gerarPdfRelatorio()}
+          disabled={
+            contextoExportacao.colunasExport.length === 0 ||
+            (linhasOrdenadas.length === 0 && contextoExportacao.irExport.length === 0)
+          }
+          className="px-4 py-2 rounded bg-rose-700 text-white text-sm font-medium hover:bg-rose-800 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Gerar PDF
         </button>
         <button
           type="button"

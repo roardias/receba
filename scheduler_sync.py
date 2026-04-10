@@ -247,7 +247,7 @@ def listar_jobs_agora(supabase, ignorar_horario: bool = False) -> list[tuple[str
         print("  [DEBUG] Jobs bruto (por agendamento):", flush=True)
         for (label, gids, eids, api_tipos, data_de, data_ate) in jobs:
             print(
-                f\"    label={label!r} gids={gids} eids={eids} apis={api_tipos} pag_de={data_de!r} pag_ate={data_ate!r}\",
+                f"    label={label!r} gids={gids} eids={eids} apis={api_tipos} pag_de={data_de!r} pag_ate={data_ate!r}",
                 flush=True,
             )
 
@@ -297,7 +297,7 @@ def worker():
                 supabase = _get_supabase()
                 empresas = obter_empresas_para_sync(supabase, grupo_ids, empresa_ids)
                 print(
-                    f\"  [DEBUG-WORKER] Executando job label={label!r} grupo_ids={grupo_ids} empresa_ids={empresa_ids} api_tipos={api_tipos}\",
+                    f"  [DEBUG-WORKER] Executando job label={label!r} grupo_ids={grupo_ids} empresa_ids={empresa_ids} api_tipos={api_tipos}",
                     flush=True,
                 )
                 if not empresas:
@@ -417,14 +417,14 @@ def ciclo(ignorar_horario: bool = False):
         print("  [DEBUG] Jobs unificados por (grupo_ids, empresa_ids):", flush=True)
         for (gids_key, eids_key), (label, gids, eids, apis_set, data_de, data_ate) in jobs_unicos.items():
             print(
-                f\"    work_key_gids={list(gids_key)} work_key_eids={list(eids_key)} label={label!r} apis_set={sorted(list(apis_set))} pag_de={data_de!r} pag_ate={data_ate!r}\",
+                f"    work_key_gids={list(gids_key)} work_key_eids={list(eids_key)} label={label!r} apis_set={sorted(list(apis_set))} pag_de={data_de!r} pag_ate={data_ate!r}",
                 flush=True,
             )
 
         print("  [DEBUG] Jobs finais (ordem interna de APIs aplicada):", flush=True)
         for (label, gids, eids, api_tipos, data_de, data_ate) in jobs_finais:
             print(
-                f\"    label={label!r} gids={gids} eids={eids} api_tipos_ordenados={api_tipos} pag_de={data_de!r} pag_ate={data_ate!r}\",
+                f"    label={label!r} gids={gids} eids={eids} api_tipos_ordenados={api_tipos} pag_de={data_de!r} pag_ate={data_ate!r}",
                 flush=True,
             )
 
