@@ -123,6 +123,11 @@ function moedaPdf(n: number): string {
   }).format(n);
 }
 
+/** Cores das tabelas no PDF (Concimed). */
+const PDF_HEAD_FILL: [number, number, number] = [224, 101, 44]; // #E0652C
+const PDF_FOOT_FILL: [number, number, number] = [87, 39, 29]; // #57271D
+const PDF_HEAD_FOOT_TEXT: [number, number, number] = [255, 255, 255];
+
 /** Logo em `public/concimed/logo.svg` — usada só no PDF. */
 const CONCIMED_LOGO_SVG_PATH = "/concimed/logo.svg";
 
@@ -839,18 +844,30 @@ export default function PagamentosMedicosPage() {
         doc.text("Dividendos pagos (por empresa)", margin, startY);
         startY += 4;
 
+        const colTotalsDiv = colunasExport.map((km) =>
+          linhasDoc.reduce((s, l) => s + (Number(l.porMes.get(km)) || 0), 0)
+        );
         const bodyDiv = linhasDoc.map((l) => {
           const cells = colunasExport.map((km) => moedaPdf(Number(l.porMes.get(km)) || 0));
-          return [textoParaExcel(l.empresa), ...cells];
+          const rowTot = colunasExport.reduce((s, km) => s + (Number(l.porMes.get(km)) || 0), 0);
+          return [textoParaExcel(l.empresa), ...cells, moedaPdf(rowTot)];
         });
+        const footDiv: string[] = [
+          "Total",
+          ...colTotalsDiv.map(moedaPdf),
+          moedaPdf(colTotalsDiv.reduce((a, b) => a + b, 0)),
+        ];
 
         autoTable(doc, {
           startY,
-          head: [["Empresa", ...mesLabels]],
+          head: [["Empresa", ...mesLabels, "Total"]],
           body: bodyDiv,
+          foot: [footDiv],
+          showFoot: "lastPage",
           theme: "grid",
           styles: { fontSize: 6, cellPadding: 0.8 },
-          headStyles: { fillColor: [71, 85, 105] },
+          headStyles: { fillColor: PDF_HEAD_FILL, textColor: PDF_HEAD_FOOT_TEXT },
+          footStyles: { fillColor: PDF_FOOT_FILL, textColor: PDF_HEAD_FOOT_TEXT },
           margin: { left: margin, right: margin },
         });
         startY = ((doc as DocWithLastTable).lastAutoTable?.finalY ?? startY) + gap;
@@ -875,16 +892,28 @@ export default function PagamentosMedicosPage() {
 
           const bodyIr = Array.from(porEmpresaIr.entries()).map(([empresa, mesMap]) => {
             const cells = colunasExport.map((km) => moedaPdf(Number(mesMap.get(km)) || 0));
-            return [textoParaExcel(empresa), ...cells];
+            const rowTot = colunasExport.reduce((s, km) => s + (Number(mesMap.get(km)) || 0), 0);
+            return [textoParaExcel(empresa), ...cells, moedaPdf(rowTot)];
           });
+          const colTotalsIr = colunasExport.map((km) =>
+            Array.from(porEmpresaIr.values()).reduce((s, m) => s + (Number(m.get(km)) || 0), 0)
+          );
+          const footIr: string[] = [
+            "Total",
+            ...colTotalsIr.map(moedaPdf),
+            moedaPdf(colTotalsIr.reduce((a, b) => a + b, 0)),
+          ];
 
           autoTable(doc, {
             startY,
-            head: [["Empresa", ...mesLabels]],
+            head: [["Empresa", ...mesLabels, "Total"]],
             body: bodyIr,
+            foot: [footIr],
+            showFoot: "lastPage",
             theme: "grid",
             styles: { fontSize: 6, cellPadding: 0.8 },
-            headStyles: { fillColor: [100, 116, 139] },
+            headStyles: { fillColor: PDF_HEAD_FILL, textColor: PDF_HEAD_FOOT_TEXT },
+            footStyles: { fillColor: PDF_FOOT_FILL, textColor: PDF_HEAD_FOOT_TEXT },
             margin: { left: margin, right: margin },
           });
           startY = ((doc as DocWithLastTable).lastAutoTable?.finalY ?? startY) + gap;
@@ -912,16 +941,26 @@ export default function PagamentosMedicosPage() {
 
     const summaryBody = colunasExport.map((km, i) => {
       const [ano, mes] = km.split("_").map(Number);
-      return [labelMes(ano, mes), moedaPdf(totaisDivPorKm[i]), moedaPdf(totaisIrPorKm[i])];
+      return [
+        labelMes(ano, mes),
+        moedaPdf(totaisDivPorKm[i]),
+        moedaPdf(totaisIrPorKm[i]),
+        moedaPdf(totaisDivPorKm[i] + totaisIrPorKm[i]),
+      ];
     });
+    const sumDiv = totaisDivPorKm.reduce((a, b) => a + b, 0);
+    const sumIr = totaisIrPorKm.reduce((a, b) => a + b, 0);
 
     autoTable(doc, {
       startY,
-      head: [["Mês/ano", "Dividendos pagos", "IR retido"]],
+      head: [["Mês/ano", "Dividendos pagos", "IR retido", "Total"]],
       body: summaryBody,
+      foot: [["Total geral", moedaPdf(sumDiv), moedaPdf(sumIr), moedaPdf(sumDiv + sumIr)]],
+      showFoot: "lastPage",
       theme: "grid",
       styles: { fontSize: 8, cellPadding: 1 },
-      headStyles: { fillColor: [30, 41, 59] },
+      headStyles: { fillColor: PDF_HEAD_FILL, textColor: PDF_HEAD_FOOT_TEXT },
+      footStyles: { fillColor: PDF_FOOT_FILL, textColor: PDF_HEAD_FOOT_TEXT },
       margin: { left: margin, right: margin },
     });
 
