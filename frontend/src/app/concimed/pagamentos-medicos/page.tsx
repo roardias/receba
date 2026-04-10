@@ -521,12 +521,11 @@ export default function PagamentosMedicosPage() {
       "Razão social",
       "CPF/CNPJ",
       "IR",
-      "Dividendos pagos",
+      "Tipo de pagamento",
       ...colunasExport.map((km) => {
         const [ano, mes] = km.split("_").map(Number);
         return labelMes(ano, mes);
       }),
-      "Total",
     ];
     const data: (string | number)[][] = [headers];
 
@@ -536,10 +535,9 @@ export default function PagamentosMedicosPage() {
         textoParaExcel(l.razao_social),
         textoParaExcel(l.cnpj_cpf_apenas_numeros),
         "",
-        "",
+        "Dividendos pagos",
       ];
       colunasExport.forEach((km) => row.push(Number(l.porMes.get(km)) || 0));
-      row.push(Number(l.valor_total) || 0);
       data.push(row);
     });
 
@@ -552,7 +550,6 @@ export default function PagamentosMedicosPage() {
         });
         totalRow.push(s);
       });
-      totalRow.push(linhasOrdenadas.reduce((acc, lin) => acc + (Number(lin.valor_total) || 0), 0));
       data.push(totalRow);
     }
 
@@ -567,7 +564,6 @@ export default function PagamentosMedicosPage() {
         "IR Retido",
       ];
       colunasExport.forEach((k) => row.push(k === km ? valor : 0));
-      row.push(valor);
       data.push(row);
     });
 
