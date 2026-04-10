@@ -68,6 +68,56 @@ const FORMATO_NUMERO_BR = "#.##0,00";
 const ANO_TODOS = "";
 type OrdenarPor = "razao_social" | "cnpj_cpf" | "total" | `mes:${string}`;
 
+function mesAtualYYYYMM(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  return `${y}-${m}`;
+}
+
+/** Aceita "1234,56" ou "1234.56" ou "1.234,56" → número */
+function parseValorMonetarioBr(s: string): number | null {
+  const t = String(s || "").trim();
+  if (!t) return null;
+  const soDigitos = t.replace(/\D/g, "");
+  if (!soDigitos) return null;
+  if (t.includes(",")) {
+    const norm = t.replace(/\./g, "").replace(",", ".");
+    const n = parseFloat(norm);
+    return Number.isFinite(n) ? n : null;
+  }
+  const n = parseFloat(t.replace(/\./g, ""));
+  return Number.isFinite(n) ? n : null;
+}
+
+function documentoValido11ou14(digits: string): boolean {
+  const n = digits.replace(/\D/g, "");
+  return n.length === 11 || n.length === 14;
+}
+
+function IconeCaderneta({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden
+    >
+      <path
+        d="M6 3h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinejoin="round"
+      />
+      <path d="M8 3v18" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
+      <path d="M11 8h7M11 12h7M11 16h5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export default function PagamentosMedicosPage() {
   const [rows, setRows] = useState<ViewRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -78,7 +128,80 @@ export default function PagamentosMedicosPage() {
   const [atualizandoView, setAtualizandoView] = useState(false);
   const [mensagemView, setMensagemView] = useState<{ tipo: "ok" | "erro"; texto: string } | null>(null);
 
+  const [irModalLinha, setIrModalLinha] = useState<ClienteLinha | null>(null);
+  const [irCompetencia, setIrCompetencia] = useState(mesAtualYYYYMM());
+  const [irValor, setIrValor] = useState("");
+  const [irSalvando, setIrSalvando] = useState(false);
+  const [irErroModal, setIrErroModal] = useState<string | null>(null);
+
   const PAGE_SIZE = 1000; // Supabase retorna no máximo 1000 por consulta; buscar em páginas para trazer todos
+
+  function abrirModalIr(l: ClienteLinha) {
+    setIrModalLinha(l);
+    setIrCompetencia(mesAtualYYYYMM());
+    setIrValor("");
+    setIrErroModal(null);
+  }
+
+  function fecharModalIr() {
+    if (irSalvando) return;
+    setIrModalLinha(null);
+    setIrErroModal(null);
+  }
+
+  async function salvarIrRetido() {
+    if (!irModalLinha) return;
+    setIrErroModal(null);
+    const doc = apenasNumeros(irModalLinha.cnpj_cpf_apenas_numeros);
+    if (!documentoValido11ou14(doc)) {
+      setIrErroModal("CPF/CNPJ deve ter 11 ou 14 dígitos para salvar.");
+      return;
+    }
+    const valorNum = parseValorMonetarioBr(irValor);
+    if (valorNum == null || valorNum < 0) {
+      setIrErroModal("Informe um valor de IR retido válido (ex.: 1.234,56).");
+      return;
+    }
+    if (!irCompetencia || !/^\d{4}-\d{2}$/.test(irCompetencia)) {
+      setIrErroModal("Selecione a competência (mês/ano).");
+      return;
+    }
+    const [y, m] = irCompetencia.split("-").map(Number);
+    if (m < 1 || m > 12) {
+      setIrErroModal("Mês inválido.");
+      return;
+    }
+    const competencia = `${irCompetencia}-01`;
+    const msgConfirm = `Confira novamente o valor: ${formatarMoeda(valorNum)}.\n\nTem certeza que deseja salvar?`;
+    if (!window.confirm(msgConfirm)) return;
+
+    setIrSalvando(true);
+    try {
+      const { error } = await supabase.from("medico_ir_retido").insert({
+        nome_medico: (irModalLinha.razao_social || "").trim() || "—",
+        cpf_apenas_numeros: doc,
+        empresa: (irModalLinha.empresa || "").trim(),
+        competencia,
+        valor_ir_retido: valorNum,
+      });
+      if (error) {
+        if (error.code === "23505") {
+          setIrErroModal("Já existe lançamento para este CPF/CNPJ, empresa e competência.");
+        } else if (error.code === "23503") {
+          setIrErroModal("Empresa inválida no cadastro (nome curto não encontrado em empresas).");
+        } else {
+          setIrErroModal(error.message || "Erro ao salvar.");
+        }
+        return;
+      }
+      setIrModalLinha(null);
+      setIrValor("");
+      setMensagemView({ tipo: "ok", texto: "IR retido registrado com sucesso." });
+      setTimeout(() => setMensagemView(null), 4000);
+    } finally {
+      setIrSalvando(false);
+    }
+  }
 
   async function carregarDados() {
     setLoading(true);
@@ -111,6 +234,18 @@ export default function PagamentosMedicosPage() {
   useEffect(() => {
     carregarDados();
   }, []);
+
+  useEffect(() => {
+    if (!irModalLinha) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !irSalvando) {
+        setIrModalLinha(null);
+        setIrErroModal(null);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [irModalLinha, irSalvando]);
 
   async function atualizarView() {
     setMensagemView(null);
@@ -260,7 +395,7 @@ export default function PagamentosMedicosPage() {
   }, [linhasOrdenadas]);
 
   function exportarExcel() {
-    const headers = ["Empresa", "Razão social", "CPF/CNPJ", ...colunasMesAno.map((km) => {
+    const headers = ["Empresa", "Razão social", "CPF/CNPJ", "IR", ...colunasMesAno.map((km) => {
       const [ano, mes] = km.split("_").map(Number);
       return labelMes(ano, mes);
     }), "Total"];
@@ -270,20 +405,21 @@ export default function PagamentosMedicosPage() {
         textoParaExcel(l.empresa),
         textoParaExcel(l.razao_social),
         textoParaExcel(l.cnpj_cpf_apenas_numeros),
+        "",
       ];
       colunasMesAno.forEach((km) => row.push(Number(l.porMes.get(km)) || 0));
       row.push(Number(l.valor_total) || 0);
       data.push(row);
     });
     if (linhasOrdenadas.length > 0) {
-      const totalRow: (string | number)[] = ["Total", "", ""];
+      const totalRow: (string | number)[] = ["Total", "", "", ""];
       colunasMesAno.forEach((km) => totalRow.push(totais.porMes.get(km) ?? 0));
       totalRow.push(totais.totalGeral);
       data.push(totalRow);
     }
     const ws = XLSX.utils.aoa_to_sheet(data);
-    const colValorInicio = 3;
-    const colValorFim = 3 + colunasMesAno.length;
+    const colValorInicio = 4;
+    const colValorFim = 4 + colunasMesAno.length;
     for (let row = 1; row <= data.length - 1; row++) {
       for (let col = colValorInicio; col <= colValorFim; col++) {
         const ref = XLSX.utils.encode_cell({ r: row, c: col });
@@ -364,13 +500,13 @@ export default function PagamentosMedicosPage() {
       ) : (
         <div className="mt-4 overflow-auto border border-slate-200 rounded max-h-[calc(100vh-12rem)]">
           <table className="w-full text-sm border-collapse">
-            <thead className="sticky top-0 z-20 bg-slate-100 shadow-[0_1px_0_0_rgba(0,0,0,0.1)] [isolation:isolate]">
+            <thead className="sticky top-0 z-30 bg-slate-100 shadow-[0_1px_0_0_rgba(0,0,0,0.1)] [isolation:isolate]">
               <tr className="text-left">
                 <th className="p-2 border-b border-slate-200 bg-slate-100 min-w-[100px] whitespace-nowrap">
                   Empresa
                 </th>
                 <th
-                  className="p-2 border-b border-slate-200 sticky left-0 bg-slate-100 z-20 min-w-[180px] cursor-pointer select-none hover:bg-slate-200"
+                  className="p-2 border-b border-slate-200 sticky left-0 z-40 bg-slate-100 min-w-[180px] cursor-pointer select-none hover:bg-slate-200 shadow-[4px_0_8px_-2px_rgba(15,23,42,0.12)]"
                   onClick={() => toggleOrdenacao("razao_social")}
                   title="Ordenar por razão social"
                 >
@@ -384,6 +520,12 @@ export default function PagamentosMedicosPage() {
                 >
                   CPF/CNPJ
                   {ordenarPor === "cnpj_cpf" && (ordemAsc ? " ↑" : " ↓")}
+                </th>
+                <th
+                  className="p-2 border-b border-slate-200 bg-slate-100 w-14 text-center whitespace-nowrap"
+                  title="Informar IR retido"
+                >
+                  IR
                 </th>
                 {colunasMesAno.map((km) => {
                   const [ano, mes] = km.split("_").map(Number);
@@ -413,7 +555,7 @@ export default function PagamentosMedicosPage() {
             <tbody>
               {linhasOrdenadas.length === 0 ? (
                 <tr>
-                  <td colSpan={4 + colunasMesAno.length} className="p-4 text-slate-500 text-center">
+                  <td colSpan={5 + colunasMesAno.length} className="p-4 text-slate-500 text-center">
                     Nenhum registro encontrado.
                   </td>
                 </tr>
@@ -421,24 +563,41 @@ export default function PagamentosMedicosPage() {
                 linhasOrdenadas.map((l, idx) => (
                   <tr
                     key={`${l.empresa ?? ""}_${l.chave_cliente ?? l.cnpj_cpf_apenas_numeros}_${idx}`}
-                    className="border-b border-slate-100 transition-colors hover:bg-sky-100 focus-within:bg-sky-100"
+                    className="group border-b border-slate-100 bg-white transition-colors hover:bg-sky-100 focus-within:bg-sky-100"
                   >
-                    <td className="p-2 whitespace-nowrap">{l.empresa || "—"}</td>
-                    <td className="p-2 sticky left-0 bg-inherit z-10 font-medium">{l.razao_social || "—"}</td>
-                    <td className="p-2">{formatarCnpjCpf(l.cnpj_cpf_apenas_numeros)}</td>
+                    <td className="p-2 whitespace-nowrap bg-white group-hover:bg-sky-100">
+                      {l.empresa || "—"}
+                    </td>
+                    <td className="p-2 sticky left-0 z-20 min-w-[180px] font-medium bg-white shadow-[4px_0_8px_-2px_rgba(15,23,42,0.1)] group-hover:bg-sky-100">
+                      {l.razao_social || "—"}
+                    </td>
+                    <td className="p-2 bg-white group-hover:bg-sky-100">
+                      {formatarCnpjCpf(l.cnpj_cpf_apenas_numeros)}
+                    </td>
+                    <td className="p-2 text-center bg-white group-hover:bg-sky-100 align-middle">
+                      <button
+                        type="button"
+                        onClick={() => abrirModalIr(l)}
+                        className="inline-flex items-center justify-center p-1.5 rounded-md border border-slate-300 bg-white text-slate-700 hover:bg-amber-50 hover:border-amber-400 hover:text-amber-900 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                        title="Informar IR retido"
+                        aria-label="Informar IR retido"
+                      >
+                        <IconeCaderneta className="w-5 h-5" />
+                      </button>
+                    </td>
                     {colunasMesAno.map((km) => {
                       const val = l.porMes.get(km);
                       const acima50k = Number(val) > 50000;
                       return (
                         <td
                           key={km}
-                          className={`p-2 text-right whitespace-nowrap ${acima50k ? "text-red-600 font-semibold bg-red-50" : ""}`}
+                          className={`p-2 text-right whitespace-nowrap bg-white group-hover:bg-sky-100 ${acima50k ? "text-red-600 font-semibold !bg-red-50 group-hover:!bg-red-50" : ""}`}
                         >
                           {formatarMoeda(val)}
                         </td>
                       );
                     })}
-                    <td className="p-2 text-right whitespace-nowrap font-medium">
+                    <td className="p-2 text-right whitespace-nowrap font-medium bg-white group-hover:bg-sky-100">
                       {formatarMoeda(l.valor_total)}
                     </td>
                   </tr>
@@ -448,7 +607,7 @@ export default function PagamentosMedicosPage() {
             {linhasOrdenadas.length > 0 && (
               <tfoot className="sticky bottom-0 bg-slate-100 border-t-2 border-slate-300">
                 <tr>
-                  <td colSpan={3} className="p-2 font-semibold text-slate-700">
+                  <td colSpan={4} className="p-2 font-semibold text-slate-700">
                     Total
                   </td>
                   {colunasMesAno.map((km) => (
@@ -463,6 +622,103 @@ export default function PagamentosMedicosPage() {
               </tfoot>
             )}
           </table>
+        </div>
+      )}
+
+      {irModalLinha && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40"
+          role="presentation"
+          onClick={(e) => e.target === e.currentTarget && fecharModalIr()}
+        >
+          <div
+            className="bg-white rounded-lg shadow-xl max-w-md w-full border border-slate-200"
+            role="dialog"
+            aria-labelledby="ir-modal-titulo"
+            aria-modal="true"
+          >
+            <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between gap-2">
+              <h2 id="ir-modal-titulo" className="text-lg font-semibold text-slate-800">
+                Informar IR retido
+              </h2>
+              <button
+                type="button"
+                onClick={fecharModalIr}
+                disabled={irSalvando}
+                className="text-slate-500 hover:text-slate-800 text-xl leading-none px-1 disabled:opacity-50"
+                aria-label="Fechar"
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-4 space-y-4 text-sm">
+              <div>
+                <span className="text-slate-500 block text-xs uppercase tracking-wide">Nome</span>
+                <p className="text-slate-900 font-medium">{irModalLinha.razao_social || "—"}</p>
+              </div>
+              <div>
+                <span className="text-slate-500 block text-xs uppercase tracking-wide">CPF/CNPJ</span>
+                <p className="text-slate-900">{formatarCnpjCpf(irModalLinha.cnpj_cpf_apenas_numeros)}</p>
+              </div>
+              <div>
+                <span className="text-slate-500 block text-xs uppercase tracking-wide">Empresa</span>
+                <p className="text-slate-900">{irModalLinha.empresa || "—"}</p>
+              </div>
+              <div>
+                <label htmlFor="ir-competencia" className="block text-slate-700 font-medium mb-1">
+                  Competência (mês da retenção)
+                </label>
+                <input
+                  id="ir-competencia"
+                  type="month"
+                  value={irCompetencia}
+                  onChange={(e) => setIrCompetencia(e.target.value)}
+                  className="w-full border border-slate-300 rounded px-3 py-2"
+                />
+                <p className="text-slate-500 text-xs mt-1">
+                  Será gravado como dia 01 do mês escolhido (01/mm/aaaa).
+                </p>
+              </div>
+              <div>
+                <label htmlFor="ir-valor" className="block text-slate-700 font-medium mb-1">
+                  Valor do IR retido (R$)
+                </label>
+                <input
+                  id="ir-valor"
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="0,00"
+                  value={irValor}
+                  onChange={(e) => setIrValor(e.target.value)}
+                  className="w-full border border-slate-300 rounded px-3 py-2"
+                  autoComplete="off"
+                />
+              </div>
+              {irErroModal && (
+                <p className="text-red-600 text-sm" role="alert">
+                  {irErroModal}
+                </p>
+              )}
+              <div className="flex gap-2 justify-end pt-2">
+                <button
+                  type="button"
+                  onClick={fecharModalIr}
+                  disabled={irSalvando}
+                  className="px-4 py-2 rounded border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={salvarIrRetido}
+                  disabled={irSalvando}
+                  className="px-4 py-2 rounded bg-amber-600 text-white font-medium hover:bg-amber-700 disabled:opacity-50"
+                >
+                  {irSalvando ? "Salvando..." : "Salvar"}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>
