@@ -541,18 +541,6 @@ export default function PagamentosMedicosPage() {
       data.push(row);
     });
 
-    if (linhasOrdenadas.length > 0) {
-      const totalRow: (string | number)[] = ["Total", "", "", "", ""];
-      colunasExport.forEach((km) => {
-        let s = 0;
-        linhasOrdenadas.forEach((lin) => {
-          s += Number(lin.porMes.get(km)) || 0;
-        });
-        totalRow.push(s);
-      });
-      data.push(totalRow);
-    }
-
     irExport.forEach((r) => {
       const km = competenciaParaKm(r.competencia);
       const valor = Number(r.valor_ir_retido) || 0;
