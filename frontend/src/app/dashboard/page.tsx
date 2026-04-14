@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import { supabase } from "@/lib/supabase";
 import { normalizarClienteNome } from "@/lib/clienteNome";
@@ -388,6 +388,8 @@ export default function DashboardPage() {
   const [buscaCliente, setBuscaCliente] = useState("");
   /** Vazio = todos os status; senão mostra clientes cujo status está na lista (OU). */
   const [filtroStatus, setFiltroStatus] = useState<string[]>([]);
+  const [filtroStatusPainelAberto, setFiltroStatusPainelAberto] = useState(false);
+  const filtroStatusRef = useRef<HTMLDivElement>(null);
   type SortCol = "cod" | "cliente" | "valPago" | "valAberto" | "valAtualizado";
   const [sortCol, setSortCol] = useState<SortCol>("valAberto");
   const [sortAsc, setSortAsc] = useState(false);
@@ -639,6 +641,24 @@ export default function DashboardPage() {
       prev.includes(value) ? prev.filter((x) => x !== value) : [...prev, value]
     );
   }
+
+  useEffect(() => {
+    if (!filtroStatusPainelAberto) return;
+    function handlePointerDown(e: PointerEvent) {
+      const root = filtroStatusRef.current;
+      if (!root || root.contains(e.target as Node)) return;
+      setFiltroStatusPainelAberto(false);
+    }
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setFiltroStatusPainelAberto(false);
+    }
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    document.addEventListener("keydown", handleKeyDown, true);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown, true);
+      document.removeEventListener("keydown", handleKeyDown, true);
+    };
+  }, [filtroStatusPainelAberto]);
 
   const totaisColunas = useMemo(
     () =>
@@ -1482,37 +1502,48 @@ export default function DashboardPage() {
           </div>
           <div>
             <span className="block text-sm font-medium text-slate-700 mb-1">Status</span>
-            <details className="relative group border border-slate-300 rounded bg-white min-w-[220px]">
-              <summary className="cursor-pointer list-none px-4 py-2 pr-8 text-sm text-slate-800 hover:bg-slate-50 rounded [&::-webkit-details-marker]:hidden">
+            <div
+              ref={filtroStatusRef}
+              className="relative border border-slate-300 rounded bg-white min-w-[220px]"
+            >
+              <button
+                type="button"
+                aria-expanded={filtroStatusPainelAberto}
+                aria-haspopup="listbox"
+                onClick={() => setFiltroStatusPainelAberto((aberto) => !aberto)}
+                className="w-full text-left cursor-pointer px-4 py-2 pr-8 text-sm text-slate-800 hover:bg-slate-50 rounded"
+              >
                 <span className="block truncate max-w-[240px]" title={rotuloFiltroStatus.title}>
                   {rotuloFiltroStatus.resumo}
                 </span>
-              </summary>
-              <div className="absolute left-0 top-full mt-1 z-50 min-w-full max-h-64 overflow-y-auto rounded border border-slate-200 bg-white py-2 shadow-lg">
-                <button
-                  type="button"
-                  onClick={() => setFiltroStatus([])}
-                  className="w-full text-left px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100"
-                >
-                  Todos os status
-                </button>
-                <div className="border-t border-slate-100 my-1" />
-                {STATUS_OPCOES.map((o) => (
-                  <label
-                    key={o.value}
-                    className="flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer hover:bg-slate-50"
+              </button>
+              {filtroStatusPainelAberto ? (
+                <div className="absolute left-0 top-full mt-1 z-50 min-w-full max-h-64 overflow-y-auto rounded border border-slate-200 bg-white py-2 shadow-lg">
+                  <button
+                    type="button"
+                    onClick={() => setFiltroStatus([])}
+                    className="w-full text-left px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100"
                   >
-                    <input
-                      type="checkbox"
-                      checked={filtroStatus.includes(o.value)}
-                      onChange={() => toggleFiltroStatus(o.value)}
-                      className="rounded border-slate-300"
-                    />
-                    <span>{o.label}</span>
-                  </label>
-                ))}
-              </div>
-            </details>
+                    Todos os status
+                  </button>
+                  <div className="border-t border-slate-100 my-1" />
+                  {STATUS_OPCOES.map((o) => (
+                    <label
+                      key={o.value}
+                      className="flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer hover:bg-slate-50"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={filtroStatus.includes(o.value)}
+                        onChange={() => toggleFiltroStatus(o.value)}
+                        className="rounded border-slate-300"
+                      />
+                      <span>{o.label}</span>
+                    </label>
+                  ))}
+                </div>
+              ) : null}
+            </div>
           </div>
           <button
             type="button"
