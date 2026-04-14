@@ -386,7 +386,8 @@ export default function DashboardPage() {
   const [atualizandoView, setAtualizandoView] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [buscaCliente, setBuscaCliente] = useState("");
-  const [filtroStatus, setFiltroStatus] = useState("");
+  /** Vazio = todos os status; senão mostra clientes cujo status está na lista (OU). */
+  const [filtroStatus, setFiltroStatus] = useState<string[]>([]);
   type SortCol = "cod" | "cliente" | "valPago" | "valAberto" | "valAtualizado";
   const [sortCol, setSortCol] = useState<SortCol>("valAberto");
   const [sortAsc, setSortAsc] = useState(false);
@@ -614,14 +615,30 @@ export default function DashboardPage() {
     : dadosAgrupados;
 
   const dadosFiltradosPorStatus = useMemo(() => {
-    if (!filtroStatus) return dadosFiltrados;
+    if (filtroStatus.length === 0) return dadosFiltrados;
+    const permitidos = new Set(filtroStatus);
     return dadosFiltrados.filter((g) => {
       const chave = g.rows[0]?.chave_cliente;
       const info = chave ? (statusPorChave[chave] ?? statusDashboard[chave]) : null;
       const s = info?.status ?? "em_cobranca";
-      return s === filtroStatus;
+      return permitidos.has(s);
     });
   }, [dadosFiltrados, filtroStatus, statusDashboard, statusPorChave]);
+
+  const rotuloFiltroStatus = useMemo(() => {
+    if (filtroStatus.length === 0) return { resumo: "Todos os status", title: "Todos os status" };
+    const labels = filtroStatus.map((v) => STATUS_OPCOES.find((o) => o.value === v)?.label ?? v);
+    return {
+      resumo: labels.length <= 2 ? labels.join(", ") : `${filtroStatus.length} status`,
+      title: labels.join(", "),
+    };
+  }, [filtroStatus, STATUS_OPCOES]);
+
+  function toggleFiltroStatus(value: string) {
+    setFiltroStatus((prev) =>
+      prev.includes(value) ? prev.filter((x) => x !== value) : [...prev, value]
+    );
+  }
 
   const totaisColunas = useMemo(
     () =>
@@ -1464,21 +1481,38 @@ export default function DashboardPage() {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Status
-            </label>
-            <select
-              value={filtroStatus}
-              onChange={(e) => setFiltroStatus(e.target.value)}
-              className="px-4 py-2 border rounded bg-white min-w-[220px]"
-            >
-              <option value="">Todos os status</option>
-              {STATUS_OPCOES.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
+            <span className="block text-sm font-medium text-slate-700 mb-1">Status</span>
+            <details className="relative group border border-slate-300 rounded bg-white min-w-[220px]">
+              <summary className="cursor-pointer list-none px-4 py-2 pr-8 text-sm text-slate-800 hover:bg-slate-50 rounded [&::-webkit-details-marker]:hidden">
+                <span className="block truncate max-w-[240px]" title={rotuloFiltroStatus.title}>
+                  {rotuloFiltroStatus.resumo}
+                </span>
+              </summary>
+              <div className="absolute left-0 top-full mt-1 z-50 min-w-full max-h-64 overflow-y-auto rounded border border-slate-200 bg-white py-2 shadow-lg">
+                <button
+                  type="button"
+                  onClick={() => setFiltroStatus([])}
+                  className="w-full text-left px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100"
+                >
+                  Todos os status
+                </button>
+                <div className="border-t border-slate-100 my-1" />
+                {STATUS_OPCOES.map((o) => (
+                  <label
+                    key={o.value}
+                    className="flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer hover:bg-slate-50"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={filtroStatus.includes(o.value)}
+                      onChange={() => toggleFiltroStatus(o.value)}
+                      className="rounded border-slate-300"
+                    />
+                    <span>{o.label}</span>
+                  </label>
+                ))}
+              </div>
+            </details>
           </div>
           <button
             type="button"
