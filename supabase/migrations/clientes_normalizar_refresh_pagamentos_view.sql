@@ -122,6 +122,7 @@ ordenado AS (
     d.valor_ata,
     ROW_NUMBER() OVER (PARTITION BY t.cpf ORDER BY t.ano, t.mes) AS rn,
     CASE
+      WHEN d.nome = 'Rafael Eidi Yamamoto' AND t.ano = 2026 AND t.mes = 4 THEN 89157.03::NUMERIC(20,2)
       WHEN t.ano > 2026 OR (t.ano = 2026 AND t.mes >= 2) THEN 48000::NUMERIC(20,2)
       ELSE 50000::NUMERIC(20,2)
     END AS limite_regra

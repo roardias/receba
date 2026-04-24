@@ -20,3 +20,4 @@ Este arquivo registra excecoes de regra para manter historico e facilitar novos 
 - `supabase/migrations/view_controle_dividendos_ata_2025.sql`
 - `supabase/migrations/view_controle_dividendos_ata_2025_limite_48k_fev2026.sql`
 - `supabase/migrations/view_controle_dividendos_ata_2025_rafael_abr2026_zerar_saldo.sql`
+- `supabase/migrations/clientes_normalizar_refresh_pagamentos_view.sql`
