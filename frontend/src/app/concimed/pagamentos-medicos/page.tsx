@@ -247,6 +247,8 @@ export default function PagamentosMedicosPage() {
   const [busca, setBusca] = useState("");
   /** Vazio = todos os anos; senão apenas os anos listados (string "2023", "2024", …) */
   const [anosFiltro, setAnosFiltro] = useState<string[]>([]);
+  /** Vazio = todas as razões sociais; senão apenas as selecionadas */
+  const [razoesSociaisFiltro, setRazoesSociaisFiltro] = useState<string[]>([]);
   const [ordenarPor, setOrdenarPor] = useState<OrdenarPor>("razao_social");
   const [ordemAsc, setOrdemAsc] = useState(true);
   const [atualizandoView, setAtualizandoView] = useState(false);
@@ -532,12 +534,17 @@ export default function PagamentosMedicosPage() {
     }
   }
 
-  const { linhas, colunasMesAno, anosDisponiveis } = useMemo(() => {
+  const { linhas, colunasMesAno, anosDisponiveis, razoesSociaisDisponiveis } = useMemo(() => {
     const rowsFiltradas =
       anosFiltro.length > 0 ? rows.filter((r) => anosFiltro.includes(String(r.ano))) : rows;
 
     const anosSet = new Set<number>();
     rows.forEach((r) => anosSet.add(r.ano));
+    const razoesSet = new Set<string>();
+    rowsFiltradas.forEach((r) => {
+      const nome = (r.razao_social || "").trim();
+      if (nome) razoesSet.add(nome);
+    });
 
     const porCliente = new Map<string, ClienteLinha>();
     const setMesAno = new Set<string>();
@@ -579,8 +586,13 @@ export default function PagamentosMedicosPage() {
     });
 
     const anosDisponiveis = Array.from(anosSet).sort((a, b) => b - a);
+    const razoesSociaisDisponiveis = Array.from(razoesSet).sort((a, b) => a.localeCompare(b, "pt-BR"));
 
     let linhasFiltradas = Array.from(porCliente.values());
+    if (razoesSociaisFiltro.length > 0) {
+      const selecionadas = new Set(razoesSociaisFiltro);
+      linhasFiltradas = linhasFiltradas.filter((l) => selecionadas.has(l.razao_social));
+    }
     if (busca.trim()) {
       const termo = busca.trim().toLowerCase();
       const digitos = apenasNumeros(busca);
@@ -592,8 +604,8 @@ export default function PagamentosMedicosPage() {
     }
 
     // Ordenação aplicada depois (por estado ordenarPor/ordemAsc)
-    return { linhas: linhasFiltradas, colunasMesAno, anosDisponiveis };
-  }, [rows, busca, anosFiltro]);
+    return { linhas: linhasFiltradas, colunasMesAno, anosDisponiveis, razoesSociaisDisponiveis };
+  }, [rows, busca, anosFiltro, razoesSociaisFiltro]);
 
   const linhasOrdenadas = useMemo(() => {
     const ord = [...linhas];
@@ -674,6 +686,10 @@ export default function PagamentosMedicosPage() {
         const bateDoc = digitos.length >= 11 && r.cpf_apenas_numeros.includes(digitos);
         if (!bateNome && !bateDoc) return false;
       }
+      if (razoesSociaisFiltro.length > 0) {
+        const selecionadas = new Set(razoesSociaisFiltro);
+        if (!selecionadas.has(r.nome_medico)) return false;
+      }
       return true;
     };
     const irExport = irRetidoRegistros.filter(filtroIrExport);
@@ -688,7 +704,7 @@ export default function PagamentosMedicosPage() {
       return aAno !== bAno ? aAno - bAno : aMes - bMes;
     });
     return { irExport, colunasExport };
-  }, [irRetidoRegistros, colunasMesAno, anosFiltro, busca]);
+  }, [irRetidoRegistros, colunasMesAno, anosFiltro, busca, razoesSociaisFiltro]);
 
   function exportarExcel() {
     const { irExport, colunasExport } = contextoExportacao;
@@ -974,6 +990,13 @@ export default function PagamentosMedicosPage() {
     });
   }
 
+  function toggleRazaoSocialFiltro(razaoSocial: string) {
+    setRazoesSociaisFiltro((prev) => {
+      if (prev.includes(razaoSocial)) return prev.filter((r) => r !== razaoSocial);
+      return [...prev, razaoSocial].sort((a, b) => a.localeCompare(b, "pt-BR"));
+    });
+  }
+
   const resumoAnosFiltro =
     anosFiltro.length === 0
       ? "Todos os anos"
@@ -981,6 +1004,13 @@ export default function PagamentosMedicosPage() {
           .slice()
           .sort((a, b) => Number(b) - Number(a))
           .join(", ");
+
+  const resumoRazoesSociaisFiltro =
+    razoesSociaisFiltro.length === 0
+      ? "Todas as razões sociais"
+      : razoesSociaisFiltro.length === 1
+        ? razoesSociaisFiltro[0]
+        : `${razoesSociaisFiltro.length} selecionadas`;
 
   return (
     <div className="p-4 max-w-full">
@@ -1022,6 +1052,45 @@ export default function PagamentosMedicosPage() {
                       className="rounded border-slate-300"
                     />
                     <span>{s}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </details>
+        </div>
+        <div className="flex items-start gap-2">
+          <span className="text-slate-600 text-sm pt-2 shrink-0">Razão social:</span>
+          <details className="relative group border border-slate-300 rounded bg-white min-w-[280px]">
+            <summary className="cursor-pointer list-none px-3 py-2 pr-8 text-sm text-slate-800 hover:bg-slate-50 rounded [&::-webkit-details-marker]:hidden">
+              <span className="block truncate max-w-[320px]" title={resumoRazoesSociaisFiltro}>
+                {resumoRazoesSociaisFiltro}
+              </span>
+            </summary>
+            <div className="absolute left-0 top-full mt-1 z-50 min-w-full max-h-64 overflow-y-auto rounded border border-slate-200 bg-white py-2 shadow-lg">
+              <button
+                type="button"
+                onClick={() => setRazoesSociaisFiltro([])}
+                className="w-full text-left px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100"
+              >
+                Todas as razões sociais
+              </button>
+              <div className="border-t border-slate-100 my-1" />
+              {razoesSociaisDisponiveis.map((razao) => {
+                const marcado = razoesSociaisFiltro.includes(razao);
+                return (
+                  <label
+                    key={razao}
+                    className="flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer hover:bg-slate-50"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={marcado}
+                      onChange={() => toggleRazaoSocialFiltro(razao)}
+                      className="rounded border-slate-300"
+                    />
+                    <span className="truncate" title={razao}>
+                      {razao}
+                    </span>
                   </label>
                 );
               })}
