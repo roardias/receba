@@ -15,6 +15,13 @@ Este arquivo registra excecoes de regra para manter historico e facilitar novos 
   - saldo inicial em Abr/2026 deve ser zerado;
   - limite de competencia no mes fica 89.157,03 (em vez de 48.000,00).
 
+- Medico: Bruno Ricardo de Castro Prieto
+- CPF: 248.547.798-10
+- Mes/ano: Abr/2026
+- Regra aplicada:
+  - saldo inicial em Abr/2026 deve ser zerado;
+  - limite de competencia no mes fica 152.910,64 (em vez de 48.000,00).
+
 ## Onde a regra foi aplicada no codigo
 
 - `supabase/migrations/view_controle_dividendos_ata_2025.sql`
