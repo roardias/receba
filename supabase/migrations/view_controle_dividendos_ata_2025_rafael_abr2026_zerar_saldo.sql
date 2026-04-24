@@ -72,7 +72,6 @@ ordenado AS (
     ROW_NUMBER() OVER (PARTITION BY t.cpf ORDER BY t.ano, t.mes) AS rn,
     CASE
       WHEN d.nome = 'Rafael Eidi Yamamoto' AND t.ano = 2026 AND t.mes = 4 THEN 89157.03::NUMERIC(20,2)
-      WHEN d.nome = 'Bruno Ricardo de Castro Prieto' AND t.ano = 2026 AND t.mes = 4 THEN 152910.64::NUMERIC(20,2)
       WHEN t.ano > 2026 OR (t.ano = 2026 AND t.mes >= 2) THEN 48000::NUMERIC(20,2)
       ELSE 50000::NUMERIC(20,2)
     END AS limite_regra
@@ -118,6 +117,8 @@ rec AS (
     (r.saldo_ata_final)::NUMERIC(20,2) AS saldo_ata_inicial,
     (CASE
       WHEN r.saldo_ata_final = 0 THEN o.total_pago_mes::NUMERIC(20,2)
+      WHEN o.nome = 'Bruno Ricardo de Castro Prieto' AND o.ano = 2026 AND o.mes = 4
+        THEN GREATEST(0, o.total_pago_mes - 152910.64)::NUMERIC(20,2)
       WHEN o.valor_ata = 1000 AND r.saldo_ata_final > 0 THEN (o.total_pago_mes - LEAST(o.total_pago_mes, r.saldo_ata_final))::NUMERIC(20,2)
       WHEN o.total_pago_mes > o.limite_regra AND r.saldo_ata_final > o.limite_regra THEN o.limite_regra::NUMERIC(20,2)
       WHEN o.total_pago_mes > o.limite_regra AND r.saldo_ata_final <= o.limite_regra AND r.saldo_ata_final > 0 THEN (o.total_pago_mes - r.saldo_ata_final)::NUMERIC(20,2)
@@ -125,6 +126,8 @@ rec AS (
     END) AS competencia_mes,
     (CASE
       WHEN r.saldo_ata_final = 0 THEN 0::NUMERIC(20,2)
+      WHEN o.nome = 'Bruno Ricardo de Castro Prieto' AND o.ano = 2026 AND o.mes = 4
+        THEN LEAST(152910.64::NUMERIC(20,2), r.saldo_ata_final)::NUMERIC(20,2)
       WHEN o.valor_ata = 1000 AND r.saldo_ata_final > 0 THEN LEAST(o.total_pago_mes, r.saldo_ata_final)::NUMERIC(20,2)
       WHEN o.total_pago_mes > o.limite_regra AND r.saldo_ata_final > o.limite_regra THEN LEAST(o.total_pago_mes - o.limite_regra, r.saldo_ata_final)::NUMERIC(20,2)
       WHEN o.total_pago_mes > o.limite_regra AND r.saldo_ata_final <= o.limite_regra AND r.saldo_ata_final > 0 THEN r.saldo_ata_final::NUMERIC(20,2)
@@ -132,6 +135,8 @@ rec AS (
     END) AS baixa_ata_mes,
     (CASE
       WHEN r.saldo_ata_final = 0 THEN 0::NUMERIC(20,2)
+      WHEN o.nome = 'Bruno Ricardo de Castro Prieto' AND o.ano = 2026 AND o.mes = 4
+        THEN GREATEST(0, r.saldo_ata_final - LEAST(152910.64::NUMERIC(20,2), r.saldo_ata_final))::NUMERIC(20,2)
       WHEN o.valor_ata = 1000 AND r.saldo_ata_final > 0 THEN (r.saldo_ata_final - LEAST(o.total_pago_mes, r.saldo_ata_final))::NUMERIC(20,2)
       WHEN o.total_pago_mes > o.limite_regra AND r.saldo_ata_final > o.limite_regra THEN GREATEST(0, r.saldo_ata_final - LEAST(o.total_pago_mes - o.limite_regra, r.saldo_ata_final))::NUMERIC(20,2)
       WHEN o.total_pago_mes > o.limite_regra AND r.saldo_ata_final <= o.limite_regra AND r.saldo_ata_final > 0 THEN 0::NUMERIC(20,2)

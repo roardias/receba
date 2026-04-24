@@ -19,8 +19,8 @@ Este arquivo registra excecoes de regra para manter historico e facilitar novos 
 - CPF: 248.547.798-10
 - Mes/ano: Abr/2026
 - Regra aplicada:
-  - saldo inicial em Abr/2026 deve ser zerado;
-  - limite de competencia no mes fica 152.910,64 (em vez de 48.000,00).
+  - Baixa Ata 2025 no mes deve ser 152.910,64;
+  - competencia e saldo final passam a ser recalculados com base nessa baixa.
 
 ## Onde a regra foi aplicada no codigo
 
