@@ -90,7 +90,10 @@ function agregadoParaLinhasExibicao(agg: AgregadoPagamentosCliente): ClienteLinh
   }
   if (temRepasse && temRt) {
     const porMesTotal = new Map<string, number>();
-    const meses = new Set([...agg.porMesRepasse.keys(), ...agg.porMesRt.keys()]);
+    const meses = new Set([
+      ...Array.from(agg.porMesRepasse.keys()),
+      ...Array.from(agg.porMesRt.keys()),
+    ]);
     meses.forEach((km) => {
       porMesTotal.set(km, (agg.porMesRepasse.get(km) ?? 0) + (agg.porMesRt.get(km) ?? 0));
     });
