@@ -14,7 +14,11 @@ type ViewRow = {
   ano: number;
   mes: number;
   valor_pago_corrigido: number;
+  valor_responsavel_tecnico?: number;
 };
+
+/** Uma linha lógica na grade após separar repasse vs responsável técnico vs total */
+type TipoLinhaPagamento = "repasse_medico" | "responsavel_tecnico" | "total_combinado";
 
 type ClienteLinha = {
   empresa: string;
@@ -23,7 +27,99 @@ type ClienteLinha = {
   cnpj_cpf_apenas_numeros: string;
   valor_total: number;
   porMes: Map<string, number>;
+  tipoLinha: TipoLinhaPagamento;
+  tipoLabel: string;
 };
+
+type AgregadoPagamentosCliente = {
+  empresa: string;
+  chave_cliente: string | null;
+  razao_social: string;
+  cnpj_cpf_apenas_numeros: string;
+  porMesRepasse: Map<string, number>;
+  porMesRt: Map<string, number>;
+};
+
+const ORDEM_TIPO_LINHA: Record<TipoLinhaPagamento, number> = {
+  repasse_medico: 0,
+  responsavel_tecnico: 1,
+  total_combinado: 2,
+};
+
+function somaMapValores(m: Map<string, number>): number {
+  let s = 0;
+  m.forEach((v) => {
+    s += Number(v) || 0;
+  });
+  return s;
+}
+
+function agregadoParaLinhasExibicao(agg: AgregadoPagamentosCliente): ClienteLinha[] {
+  const somaRepasse = somaMapValores(agg.porMesRepasse);
+  const somaRt = somaMapValores(agg.porMesRt);
+  const temRepasse = somaRepasse > 0;
+  const temRt = somaRt > 0;
+  const base = {
+    empresa: agg.empresa,
+    chave_cliente: agg.chave_cliente,
+    razao_social: agg.razao_social,
+    cnpj_cpf_apenas_numeros: agg.cnpj_cpf_apenas_numeros,
+  };
+
+  if (temRepasse && !temRt) {
+    return [
+      {
+        ...base,
+        tipoLinha: "repasse_medico",
+        tipoLabel: "Repasse Médico",
+        valor_total: somaRepasse,
+        porMes: new Map(agg.porMesRepasse),
+      },
+    ];
+  }
+  if (!temRepasse && temRt) {
+    return [
+      {
+        ...base,
+        tipoLinha: "responsavel_tecnico",
+        tipoLabel: "Responsável Técnico",
+        valor_total: somaRt,
+        porMes: new Map(agg.porMesRt),
+      },
+    ];
+  }
+  if (temRepasse && temRt) {
+    const porMesTotal = new Map<string, number>();
+    const meses = new Set([...agg.porMesRepasse.keys(), ...agg.porMesRt.keys()]);
+    meses.forEach((km) => {
+      porMesTotal.set(km, (agg.porMesRepasse.get(km) ?? 0) + (agg.porMesRt.get(km) ?? 0));
+    });
+    return [
+      {
+        ...base,
+        tipoLinha: "repasse_medico",
+        tipoLabel: "Repasse Médico",
+        valor_total: somaRepasse,
+        porMes: new Map(agg.porMesRepasse),
+      },
+      {
+        ...base,
+        tipoLinha: "responsavel_tecnico",
+        tipoLabel: "Responsável Técnico",
+        valor_total: somaRt,
+        porMes: new Map(agg.porMesRt),
+      },
+      {
+        ...base,
+        tipoLinha: "total_combinado",
+        tipoLabel: "Total",
+        valor_total: somaRepasse + somaRt,
+        porMes: porMesTotal,
+      },
+    ];
+  }
+  return [];
+}
 
 type MedicoIrRetidoRegistro = {
   nome_medico: string;
@@ -546,7 +642,7 @@ export default function PagamentosMedicosPage() {
       if (nome) razoesSet.add(nome);
     });
 
-    const porCliente = new Map<string, ClienteLinha>();
+    const porCliente = new Map<string, AgregadoPagamentosCliente>();
     const setMesAno = new Set<string>();
 
     for (const r of rowsFiltradas) {
@@ -562,15 +658,16 @@ export default function PagamentosMedicosPage() {
           chave_cliente: r.chave_cliente,
           razao_social: (r.razao_social || "").trim() || "—",
           cnpj_cpf_apenas_numeros: cnpjDigits.length >= 11 ? cnpjDigits : (r.cnpj_cpf_apenas_numeros || ""),
-          valor_total: 0,
-          porMes: new Map(),
+          porMesRepasse: new Map(),
+          porMesRt: new Map(),
         });
       }
       const lin = porCliente.get(key)!;
-      const v = Number(r.valor_pago_corrigido) || 0;
-      lin.valor_total += v;
+      const vr = Number(r.valor_pago_corrigido) || 0;
+      const vrt = Number(r.valor_responsavel_tecnico) || 0;
       const km = chaveMes(r.ano, r.mes);
-      lin.porMes.set(km, (lin.porMes.get(km) ?? 0) + v);
+      lin.porMesRepasse.set(km, (lin.porMesRepasse.get(km) ?? 0) + vr);
+      lin.porMesRt.set(km, (lin.porMesRt.get(km) ?? 0) + vrt);
       if (!lin.razao_social || lin.razao_social === "—") {
         const nome = (r.razao_social || "").trim();
         if (nome) lin.razao_social = nome;
@@ -588,7 +685,7 @@ export default function PagamentosMedicosPage() {
     const anosDisponiveis = Array.from(anosSet).sort((a, b) => b - a);
     const razoesSociaisDisponiveis = Array.from(razoesSet).sort((a, b) => a.localeCompare(b, "pt-BR"));
 
-    let linhasFiltradas = Array.from(porCliente.values());
+    let linhasFiltradas = Array.from(porCliente.values()).flatMap(agregadoParaLinhasExibicao);
     if (razoesSociaisFiltro.length > 0) {
       const selecionadas = new Set(razoesSociaisFiltro);
       linhasFiltradas = linhasFiltradas.filter((l) => selecionadas.has(l.razao_social));
@@ -609,17 +706,26 @@ export default function PagamentosMedicosPage() {
 
   const linhasOrdenadas = useMemo(() => {
     const ord = [...linhas];
+    function desempateMesmoMedico(a: ClienteLinha, b: ClienteLinha): number {
+      const e = (a.empresa || "").localeCompare(b.empresa || "", "pt-BR");
+      if (e !== 0) return e;
+      return ORDEM_TIPO_LINHA[a.tipoLinha] - ORDEM_TIPO_LINHA[b.tipoLinha];
+    }
     if (ordenarPor === "razao_social") {
-      ord.sort((a, b) =>
-        ordemAsc
+      ord.sort((a, b) => {
+        const c = ordemAsc
           ? (a.razao_social || "").localeCompare(b.razao_social || "", "pt-BR")
-          : (b.razao_social || "").localeCompare(a.razao_social || "", "pt-BR")
-      );
+          : (b.razao_social || "").localeCompare(a.razao_social || "", "pt-BR");
+        if (c !== 0) return c;
+        return desempateMesmoMedico(a, b);
+      });
     } else if (ordenarPor === "cnpj_cpf") {
       ord.sort((a, b) => {
         const x = (a.cnpj_cpf_apenas_numeros || "").padStart(14, "0");
         const y = (b.cnpj_cpf_apenas_numeros || "").padStart(14, "0");
-        return ordemAsc ? x.localeCompare(y) : y.localeCompare(x);
+        const c = ordemAsc ? x.localeCompare(y) : y.localeCompare(x);
+        if (c !== 0) return c;
+        return desempateMesmoMedico(a, b);
       });
     } else if (ordenarPor.startsWith("mes:")) {
       const km = ordenarPor.slice(4);
@@ -627,16 +733,21 @@ export default function PagamentosMedicosPage() {
         const va = Number(a.porMes.get(km)) || 0;
         const vb = Number(b.porMes.get(km)) || 0;
         if (va === vb) {
-          // Desempate: total (desc) e depois nome
           if (a.valor_total !== b.valor_total) return b.valor_total - a.valor_total;
-          return (a.razao_social || "").localeCompare(b.razao_social || "", "pt-BR");
+          const n = (a.razao_social || "").localeCompare(b.razao_social || "", "pt-BR");
+          if (n !== 0) return n;
+          return desempateMesmoMedico(a, b);
         }
         return ordemAsc ? va - vb : vb - va;
       });
     } else {
-      ord.sort((a, b) =>
-        ordemAsc ? a.valor_total - b.valor_total : b.valor_total - a.valor_total
-      );
+      ord.sort((a, b) => {
+        const d = ordemAsc ? a.valor_total - b.valor_total : b.valor_total - a.valor_total;
+        if (d !== 0) return d;
+        const n = (a.razao_social || "").localeCompare(b.razao_social || "", "pt-BR");
+        if (n !== 0) return n;
+        return desempateMesmoMedico(a, b);
+      });
     }
     return ord;
   }, [linhas, ordenarPor, ordemAsc]);
@@ -665,6 +776,7 @@ export default function PagamentosMedicosPage() {
     const porMes = new Map<string, number>();
     let totalGeral = 0;
     linhasOrdenadas.forEach((l) => {
+      if (l.tipoLinha === "total_combinado") return;
       totalGeral += l.valor_total;
       l.porMes.forEach((v, km) => porMes.set(km, (porMes.get(km) ?? 0) + v));
     });
@@ -726,7 +838,7 @@ export default function PagamentosMedicosPage() {
         textoParaExcel(l.empresa),
         textoParaExcel(l.razao_social),
         textoParaExcel(l.cnpj_cpf_apenas_numeros),
-        "Dividendos pagos",
+        textoParaExcel(l.tipoLabel),
       ];
       colunasExport.forEach((km) => row.push(Number(l.porMes.get(km)) || 0));
       data.push(row);
@@ -818,7 +930,9 @@ export default function PagamentosMedicosPage() {
     startY += gap;
 
     function nomePorDoc(d: string): string {
-      const linha = linhasOrdenadas.find((l) => apenasNumeros(l.cnpj_cpf_apenas_numeros) === d);
+      const linha = linhasOrdenadas.find(
+        (l) => apenasNumeros(l.cnpj_cpf_apenas_numeros) === d && l.tipoLinha !== "total_combinado"
+      );
       if (linha?.razao_social?.trim()) return linha.razao_social.trim();
       const ir = irExport.find((x) => apenasNumeros(x.cpf_apenas_numeros) === d);
       return (ir?.nome_medico || "").trim() || d;
@@ -857,26 +971,28 @@ export default function PagamentosMedicosPage() {
 
       if (linhasDoc.length > 0) {
         doc.setFontSize(9);
-        doc.text("Dividendos pagos (por empresa)", margin, startY);
+        doc.text("Pagamentos por empresa e tipo", margin, startY);
         startY += 4;
 
+        const linhasDocSemTotal = linhasDoc.filter((l) => l.tipoLinha !== "total_combinado");
         const colTotalsDiv = colunasExport.map((km) =>
-          linhasDoc.reduce((s, l) => s + (Number(l.porMes.get(km)) || 0), 0)
+          linhasDocSemTotal.reduce((s, l) => s + (Number(l.porMes.get(km)) || 0), 0)
         );
         const bodyDiv = linhasDoc.map((l) => {
           const cells = colunasExport.map((km) => moedaPdf(Number(l.porMes.get(km)) || 0));
           const rowTot = colunasExport.reduce((s, km) => s + (Number(l.porMes.get(km)) || 0), 0);
-          return [textoParaExcel(l.empresa), ...cells, moedaPdf(rowTot)];
+          return [textoParaExcel(l.empresa), textoParaExcel(l.tipoLabel), ...cells, moedaPdf(rowTot)];
         });
         const footDiv: string[] = [
           "Total",
+          "",
           ...colTotalsDiv.map(moedaPdf),
           moedaPdf(colTotalsDiv.reduce((a, b) => a + b, 0)),
         ];
 
         autoTable(doc, {
           startY,
-          head: [["Empresa", ...mesLabels, "Total"]],
+          head: [["Empresa", "Tipo", ...mesLabels, "Total"]],
           body: bodyDiv,
           foot: [footDiv],
           showFoot: "lastPage",
@@ -945,7 +1061,9 @@ export default function PagamentosMedicosPage() {
     startY += 6;
 
     const totaisDivPorKm = colunasExport.map((km) =>
-      linhasOrdenadas.reduce((s, l) => s + (Number(l.porMes.get(km)) || 0), 0)
+      linhasOrdenadas
+        .filter((l) => l.tipoLinha !== "total_combinado")
+        .reduce((s, l) => s + (Number(l.porMes.get(km)) || 0), 0)
     );
     const totaisIrPorKm = colunasExport.map((km) => {
       let s = 0;
@@ -969,7 +1087,7 @@ export default function PagamentosMedicosPage() {
 
     autoTable(doc, {
       startY,
-      head: [["Mês/ano", "Dividendos pagos", "IR retido", "Total"]],
+      head: [["Mês/ano", "Repasse + resp. técnico", "IR retido", "Total"]],
       body: summaryBody,
       foot: [["Total geral", moedaPdf(sumDiv), moedaPdf(sumIr), moedaPdf(sumDiv + sumIr)]],
       showFoot: "lastPage",
@@ -1016,7 +1134,9 @@ export default function PagamentosMedicosPage() {
     <div className="p-4 max-w-full">
       <h1 className="text-2xl font-bold text-slate-800">Pagamentos realizados</h1>
       <p className="text-slate-600 mt-1">
-        Concimed — Repasse Ecografia e Repasse Médico. Busque por nome ou CPF/CNPJ (pode colar com pontuação).
+        Concimed — Repasse Ecografia / Repasse Médico e Responsabilidade Técnica (ou responsável técnico). Com os dois
+        tipos no período, a grade mostra linhas separadas e uma linha Total. Busque por nome ou CPF/CNPJ (pode colar
+        com pontuação).
       </p>
 
       <div className="mt-4 flex flex-wrap gap-4 items-center">
@@ -1167,6 +1287,9 @@ export default function PagamentosMedicosPage() {
                   CPF/CNPJ
                   {ordenarPor === "cnpj_cpf" && (ordemAsc ? " ↑" : " ↓")}
                 </th>
+                <th className="p-2 border-b border-slate-200 bg-slate-100 min-w-[140px] whitespace-nowrap">
+                  Tipo
+                </th>
                 <th
                   className="p-2 border-b border-slate-200 bg-slate-100 w-14 text-center whitespace-nowrap"
                   title="Informar IR retido"
@@ -1201,35 +1324,49 @@ export default function PagamentosMedicosPage() {
             <tbody>
               {linhasOrdenadas.length === 0 ? (
                 <tr>
-                  <td colSpan={5 + colunasMesAno.length} className="p-4 text-slate-500 text-center">
+                  <td colSpan={6 + colunasMesAno.length} className="p-4 text-slate-500 text-center">
                     Nenhum registro encontrado.
                   </td>
                 </tr>
               ) : (
-                linhasOrdenadas.map((l, idx) => (
+                linhasOrdenadas.map((l, idx) => {
+                  const isLinhaTotal = l.tipoLinha === "total_combinado";
+                  const tdPadrao = isLinhaTotal
+                    ? "bg-slate-50 group-hover:bg-slate-100"
+                    : "bg-white group-hover:bg-sky-100";
+                  return (
                   <tr
-                    key={`${l.empresa ?? ""}_${l.chave_cliente ?? l.cnpj_cpf_apenas_numeros}_${idx}`}
-                    className="group border-b border-slate-100 bg-white transition-colors hover:bg-sky-100 focus-within:bg-sky-100"
+                    key={`${l.empresa ?? ""}_${l.chave_cliente ?? l.cnpj_cpf_apenas_numeros}_${l.tipoLinha}_${idx}`}
+                    className={`group border-b border-slate-100 transition-colors hover:bg-sky-100 focus-within:bg-sky-100 ${
+                      isLinhaTotal ? "font-semibold" : ""
+                    }`}
                   >
-                    <td className="p-2 whitespace-nowrap bg-white group-hover:bg-sky-100">
+                    <td className={`p-2 whitespace-nowrap ${tdPadrao}`}>
                       {l.empresa || "—"}
                     </td>
-                    <td className="p-2 sticky left-0 z-20 min-w-[180px] font-medium bg-white shadow-[4px_0_8px_-2px_rgba(15,23,42,0.1)] group-hover:bg-sky-100">
+                    <td className={`p-2 sticky left-0 z-20 min-w-[180px] font-medium shadow-[4px_0_8px_-2px_rgba(15,23,42,0.1)] ${tdPadrao}`}>
                       {l.razao_social || "—"}
                     </td>
-                    <td className="p-2 bg-white group-hover:bg-sky-100">
+                    <td className={`p-2 ${tdPadrao}`}>
                       {formatarCnpjCpf(l.cnpj_cpf_apenas_numeros)}
                     </td>
-                    <td className="p-2 text-center bg-white group-hover:bg-sky-100 align-middle">
-                      <button
-                        type="button"
-                        onClick={() => abrirModalIr(l)}
-                        className="inline-flex items-center justify-center p-1.5 rounded-md border border-slate-300 bg-white text-slate-700 hover:bg-amber-50 hover:border-amber-400 hover:text-amber-900 focus:outline-none focus:ring-2 focus:ring-amber-400"
-                        title="Informar IR retido"
-                        aria-label="Informar IR retido"
-                      >
-                        <IconeCaderneta className="w-5 h-5" />
-                      </button>
+                    <td className={`p-2 whitespace-nowrap text-slate-700 ${tdPadrao}`}>
+                      {l.tipoLabel}
+                    </td>
+                    <td className={`p-2 text-center align-middle ${tdPadrao}`}>
+                      {l.tipoLinha === "repasse_medico" ? (
+                        <button
+                          type="button"
+                          onClick={() => abrirModalIr(l)}
+                          className="inline-flex items-center justify-center p-1.5 rounded-md border border-slate-300 bg-white text-slate-700 hover:bg-amber-50 hover:border-amber-400 hover:text-amber-900 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                          title="Informar IR retido"
+                          aria-label="Informar IR retido"
+                        >
+                          <IconeCaderneta className="w-5 h-5" />
+                        </button>
+                      ) : (
+                        <span className="text-slate-400">—</span>
+                      )}
                     </td>
                     {colunasMesAno.map((km) => {
                       const val = l.porMes.get(km);
@@ -1241,11 +1378,11 @@ export default function PagamentosMedicosPage() {
                       return (
                         <td
                           key={km}
-                          className={`p-2 text-right align-top bg-white group-hover:bg-sky-100 ${acima50k ? "text-red-600 font-semibold !bg-red-50 group-hover:!bg-red-50" : ""}`}
+                          className={`p-2 text-right align-top ${tdPadrao} ${acima50k ? "text-red-600 font-semibold !bg-red-50 group-hover:!bg-red-50" : ""}`}
                         >
                           <div className="flex flex-col items-end gap-0.5 min-h-[2.5rem] justify-center">
                             <span className="whitespace-nowrap">{formatarMoeda(val)}</span>
-                            {temIr && (
+                            {temIr && l.tipoLinha === "repasse_medico" && (
                               <button
                                 type="button"
                                 onClick={(e) => {
@@ -1262,17 +1399,18 @@ export default function PagamentosMedicosPage() {
                         </td>
                       );
                     })}
-                    <td className="p-2 text-right whitespace-nowrap font-medium bg-white group-hover:bg-sky-100">
+                    <td className={`p-2 text-right whitespace-nowrap font-medium ${tdPadrao}`}>
                       {formatarMoeda(l.valor_total)}
                     </td>
                   </tr>
-                ))
+                );
+                })
               )}
             </tbody>
             {linhasOrdenadas.length > 0 && (
               <tfoot className="sticky bottom-0 bg-slate-100 border-t-2 border-slate-300">
                 <tr>
-                  <td colSpan={4} className="p-2 font-semibold text-slate-700">
+                  <td colSpan={5} className="p-2 font-semibold text-slate-700">
                     Total
                   </td>
                   {colunasMesAno.map((km) => (

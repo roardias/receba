@@ -27,13 +27,25 @@ SELECT
   )) AS cnpj_cpf_apenas_numeros,
   EXTRACT(YEAR FROM pr.det_ddtpagamento)::INTEGER AS ano,
   EXTRACT(MONTH FROM pr.det_ddtpagamento)::INTEGER AS mes,
-  SUM(pr."ValPago_validado") AS valor_pago_corrigido
+  SUM(CASE
+    WHEN cat.descricao ILIKE '%Repasse Ecografia%' OR cat.descricao ILIKE '%Repasse Médico%'
+    THEN pr."ValPago_validado" ELSE 0::NUMERIC
+  END) AS valor_pago_corrigido,
+  SUM(CASE
+    WHEN cat.descricao ILIKE '%Repasse Ecografia%' OR cat.descricao ILIKE '%Repasse Médico%'
+    THEN 0::NUMERIC
+    WHEN cat.descricao ILIKE '%Responsabilidade Técnica%' OR cat.descricao ILIKE '%responsável técnico%'
+    THEN pr."ValPago_validado" ELSE 0::NUMERIC
+  END) AS valor_responsavel_tecnico
 FROM pagamentos_realizados pr
 INNER JOIN empresas e ON e.nome_curto = pr.empresa
 INNER JOIN grupos g ON g.id = e.grupo_id AND g.nome ILIKE '%Concimed%'
 INNER JOIN categorias cat
   ON pr.chave_categoria = cat.chave_unica
-  AND (cat.descricao ILIKE '%Repasse Ecografia%' OR cat.descricao ILIKE '%Repasse Médico%')
+  AND (
+    cat.descricao ILIKE '%Repasse Ecografia%' OR cat.descricao ILIKE '%Repasse Médico%'
+    OR cat.descricao ILIKE '%Responsabilidade Técnica%' OR cat.descricao ILIKE '%responsável técnico%'
+  )
 LEFT JOIN clientes c ON pr.chave_cliente = c.chave_unica
 WHERE pr.det_ddtpagamento IS NOT NULL
 GROUP BY pr.empresa, pr.chave_cliente,
@@ -50,7 +62,7 @@ CREATE INDEX idx_view_concimed_pagamentos_ano_mes
   ON view_concimed_pagamentos_realizados (ano, mes);
 
 COMMENT ON MATERIALIZED VIEW view_concimed_pagamentos_realizados IS
-  'Concimed: uma linha por (cliente, ano, mês) com valor pago. Nome sempre da tabela clientes (razao_social ou nome_fantasia), INITCAP.';
+  'Concimed: uma linha por (cliente, ano, mês). Repasse em valor_pago_corrigido; RT em valor_responsavel_tecnico. Nome da tabela clientes, INITCAP.';
 
 -- 3. Recriar a view que depende da materialized view
 CREATE OR REPLACE VIEW view_controle_dividendos_ata_2025 AS
