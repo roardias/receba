@@ -124,6 +124,19 @@ function agregadoParaLinhasExibicao(agg: AgregadoPagamentosCliente): ClienteLinh
   return [];
 }
 
+/** Mesma razão social + mesmo documento (CPF/CNPJ) = um bloco visual na grade. */
+function chaveNomeCpfLinha(l: ClienteLinha): string {
+  const nome = (l.razao_social || "").trim().toLowerCase();
+  const doc = String(l.cnpj_cpf_apenas_numeros || "").replace(/\D/g, "");
+  const docNorm =
+    doc.length >= 14
+      ? doc.padStart(14, "0").slice(-14)
+      : doc.length >= 11
+        ? doc.padStart(11, "0").slice(-11)
+        : doc;
+  return `${nome}|${docNorm}`;
+}
+
 type MedicoIrRetidoRegistro = {
   nome_medico: string;
   cpf_apenas_numeros: string;
@@ -755,6 +768,24 @@ export default function PagamentosMedicosPage() {
     return ord;
   }, [linhas, ordenarPor, ordemAsc]);
 
+  /** Zebra por bloco (nome + CPF iguais): alterna fundo e marca início/fim de grupo com borda mais forte. */
+  const zebraPorNomeCpf = useMemo(() => {
+    const n = linhasOrdenadas.length;
+    if (n === 0) return [];
+    let blocoPar = false;
+    let prevChave = chaveNomeCpfLinha(linhasOrdenadas[0]);
+    return linhasOrdenadas.map((l, i) => {
+      const chave = chaveNomeCpfLinha(l);
+      if (i > 0 && chave !== prevChave) {
+        blocoPar = !blocoPar;
+        prevChave = chave;
+      }
+      const inicioGrupo = i === 0 || chaveNomeCpfLinha(linhasOrdenadas[i - 1]) !== chave;
+      const fimGrupo = i === n - 1 || chaveNomeCpfLinha(linhasOrdenadas[i + 1]) !== chave;
+      return { blocoPar, inicioGrupo, fimGrupo };
+    });
+  }, [linhasOrdenadas]);
+
   function toggleOrdenacao(col: OrdenarPor) {
     if (ordenarPor === col) {
       setOrdemAsc((a) => !a);
@@ -1333,14 +1364,22 @@ export default function PagamentosMedicosPage() {
                 </tr>
               ) : (
                 linhasOrdenadas.map((l, idx) => {
+                  const meta = zebraPorNomeCpf[idx]!;
                   const isLinhaTotal = l.tipoLinha === "total_combinado";
+                  const bgStripe = meta.blocoPar ? "bg-slate-50" : "bg-white";
                   const tdPadrao = isLinhaTotal
-                    ? "bg-slate-50 group-hover:bg-slate-100"
-                    : "bg-white group-hover:bg-sky-100";
+                    ? `${meta.blocoPar ? "bg-slate-100" : "bg-slate-50"} group-hover:bg-sky-100/90`
+                    : `${bgStripe} group-hover:bg-sky-100`;
+                  const trBorda = [
+                    meta.inicioGrupo && idx > 0 ? "border-t-[3px] border-t-slate-500" : "",
+                    meta.fimGrupo ? "border-b-[3px] border-b-slate-500" : "border-b border-slate-200",
+                  ]
+                    .filter(Boolean)
+                    .join(" ");
                   return (
                   <tr
                     key={`${l.empresa ?? ""}_${l.chave_cliente ?? l.cnpj_cpf_apenas_numeros}_${l.tipoLinha}_${idx}`}
-                    className={`group border-b border-slate-100 transition-colors hover:bg-sky-100 focus-within:bg-sky-100 ${
+                    className={`group transition-colors focus-within:bg-sky-100/80 ${trBorda} ${
                       isLinhaTotal ? "font-semibold" : ""
                     }`}
                   >
