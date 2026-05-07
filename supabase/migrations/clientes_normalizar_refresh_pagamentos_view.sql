@@ -151,18 +151,24 @@ rec AS (
     (o.valor_ata)::NUMERIC(20,2) AS saldo_ata_inicial,
     (CASE
       WHEN o.valor_ata = 1000 THEN (o.total_pago_mes - LEAST(o.total_pago_mes, o.valor_ata))::NUMERIC(20,2)
+      WHEN (o.ano > 2026 OR (o.ano = 2026 AND o.mes >= 4)) AND o.valor_ata > 0
+        THEN (o.total_pago_mes - LEAST(o.total_pago_mes, o.valor_ata))::NUMERIC(20,2)
       WHEN o.total_pago_mes > o.limite_regra AND o.valor_ata > o.limite_regra THEN o.limite_regra::NUMERIC(20,2)
       WHEN o.total_pago_mes > o.limite_regra AND o.valor_ata <= o.limite_regra AND o.valor_ata > 0 THEN (o.total_pago_mes - o.valor_ata)::NUMERIC(20,2)
       ELSE o.total_pago_mes::NUMERIC(20,2)
     END) AS competencia_mes,
     (CASE
       WHEN o.valor_ata = 1000 THEN LEAST(o.total_pago_mes, o.valor_ata)::NUMERIC(20,2)
+      WHEN (o.ano > 2026 OR (o.ano = 2026 AND o.mes >= 4)) AND o.valor_ata > 0
+        THEN LEAST(o.total_pago_mes, o.valor_ata)::NUMERIC(20,2)
       WHEN o.total_pago_mes > o.limite_regra AND o.valor_ata > o.limite_regra THEN LEAST(o.total_pago_mes - o.limite_regra, o.valor_ata)::NUMERIC(20,2)
       WHEN o.total_pago_mes > o.limite_regra AND o.valor_ata <= o.limite_regra AND o.valor_ata > 0 THEN o.valor_ata::NUMERIC(20,2)
       ELSE 0::NUMERIC(20,2)
     END) AS baixa_ata_mes,
     (CASE
       WHEN o.valor_ata = 1000 THEN (o.valor_ata - LEAST(o.total_pago_mes, o.valor_ata))::NUMERIC(20,2)
+      WHEN (o.ano > 2026 OR (o.ano = 2026 AND o.mes >= 4)) AND o.valor_ata > 0
+        THEN (o.valor_ata - LEAST(o.total_pago_mes, o.valor_ata))::NUMERIC(20,2)
       WHEN o.total_pago_mes > o.limite_regra AND o.valor_ata > o.limite_regra THEN GREATEST(0, o.valor_ata - LEAST(o.total_pago_mes - o.limite_regra, o.valor_ata))::NUMERIC(20,2)
       WHEN o.total_pago_mes > o.limite_regra AND o.valor_ata <= o.limite_regra AND o.valor_ata > 0 THEN 0::NUMERIC(20,2)
       ELSE o.valor_ata::NUMERIC(20,2)
@@ -183,6 +189,8 @@ rec AS (
       WHEN o.nome = 'Bruno Ricardo de Castro Prieto' AND o.ano = 2026 AND o.mes = 4
         THEN GREATEST(0, o.total_pago_mes - 152910.64)::NUMERIC(20,2)
       WHEN o.valor_ata = 1000 AND r.saldo_ata_final > 0 THEN (o.total_pago_mes - LEAST(o.total_pago_mes, r.saldo_ata_final))::NUMERIC(20,2)
+      WHEN (o.ano > 2026 OR (o.ano = 2026 AND o.mes >= 4)) AND r.saldo_ata_final > 0
+        THEN (o.total_pago_mes - LEAST(o.total_pago_mes, r.saldo_ata_final))::NUMERIC(20,2)
       WHEN o.total_pago_mes > o.limite_regra AND r.saldo_ata_final > o.limite_regra THEN o.limite_regra::NUMERIC(20,2)
       WHEN o.total_pago_mes > o.limite_regra AND r.saldo_ata_final <= o.limite_regra AND r.saldo_ata_final > 0 THEN (o.total_pago_mes - r.saldo_ata_final)::NUMERIC(20,2)
       ELSE o.total_pago_mes::NUMERIC(20,2)
@@ -192,6 +200,8 @@ rec AS (
       WHEN o.nome = 'Bruno Ricardo de Castro Prieto' AND o.ano = 2026 AND o.mes = 4
         THEN LEAST(152910.64::NUMERIC(20,2), r.saldo_ata_final)::NUMERIC(20,2)
       WHEN o.valor_ata = 1000 AND r.saldo_ata_final > 0 THEN LEAST(o.total_pago_mes, r.saldo_ata_final)::NUMERIC(20,2)
+      WHEN (o.ano > 2026 OR (o.ano = 2026 AND o.mes >= 4)) AND r.saldo_ata_final > 0
+        THEN LEAST(o.total_pago_mes, r.saldo_ata_final)::NUMERIC(20,2)
       WHEN o.total_pago_mes > o.limite_regra AND r.saldo_ata_final > o.limite_regra THEN LEAST(o.total_pago_mes - o.limite_regra, r.saldo_ata_final)::NUMERIC(20,2)
       WHEN o.total_pago_mes > o.limite_regra AND r.saldo_ata_final <= o.limite_regra AND r.saldo_ata_final > 0 THEN r.saldo_ata_final::NUMERIC(20,2)
       ELSE 0::NUMERIC(20,2)
@@ -201,6 +211,8 @@ rec AS (
       WHEN o.nome = 'Bruno Ricardo de Castro Prieto' AND o.ano = 2026 AND o.mes = 4
         THEN GREATEST(0, r.saldo_ata_final - LEAST(152910.64::NUMERIC(20,2), r.saldo_ata_final))::NUMERIC(20,2)
       WHEN o.valor_ata = 1000 AND r.saldo_ata_final > 0 THEN (r.saldo_ata_final - LEAST(o.total_pago_mes, r.saldo_ata_final))::NUMERIC(20,2)
+      WHEN (o.ano > 2026 OR (o.ano = 2026 AND o.mes >= 4)) AND r.saldo_ata_final > 0
+        THEN (r.saldo_ata_final - LEAST(o.total_pago_mes, r.saldo_ata_final))::NUMERIC(20,2)
       WHEN o.total_pago_mes > o.limite_regra AND r.saldo_ata_final > o.limite_regra THEN GREATEST(0, r.saldo_ata_final - LEAST(o.total_pago_mes - o.limite_regra, r.saldo_ata_final))::NUMERIC(20,2)
       WHEN o.total_pago_mes > o.limite_regra AND r.saldo_ata_final <= o.limite_regra AND r.saldo_ata_final > 0 THEN 0::NUMERIC(20,2)
       ELSE r.saldo_ata_final::NUMERIC(20,2)
@@ -233,7 +245,7 @@ WHERE c.saldo_ata_inicial > 0
 ORDER BY det.nome, det.ano, det.mes;
 
 COMMENT ON VIEW view_controle_dividendos_ata_2025 IS
-  'Controle até zerar saldo ata 2025 (Iris). Regras 1k e limite 50k (jan/26) ou 48k (fev/26+) só até zerar; depois competência=total do mês, baixa=0.';
+  'Controle até zerar saldo ata 2025 (Iris). Exceções mantidas; a partir de abr/26, com saldo ATA, baixa usa o valor do mês até zerar (inclusive abaixo do limite).';
 
 GRANT SELECT ON view_controle_dividendos_ata_2025 TO anon;
 GRANT SELECT ON view_controle_dividendos_ata_2025 TO service_role;
