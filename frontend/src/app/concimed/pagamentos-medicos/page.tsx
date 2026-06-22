@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
@@ -135,6 +135,19 @@ function chaveNomeCpfLinha(l: ClienteLinha): string {
         ? doc.padStart(11, "0").slice(-11)
         : doc;
   return `${nome}|${docNorm}`;
+}
+
+/** Bloco de ordenação: mesma empresa + mesmo documento. */
+function chaveBlocoOrdenacao(l: ClienteLinha): string {
+  const empresa = (l.empresa || "").trim().toLowerCase();
+  const doc = String(l.cnpj_cpf_apenas_numeros || "").replace(/\D/g, "");
+  const docNorm =
+    doc.length >= 14
+      ? doc.padStart(14, "0").slice(-14)
+      : doc.length >= 11
+        ? doc.padStart(11, "0").slice(-11)
+        : doc;
+  return `${empresa}|${docNorm}`;
 }
 
 type MedicoIrRetidoRegistro = {
@@ -330,6 +343,23 @@ function documentoValido11ou14(digits: string): boolean {
   return n.length === 11 || n.length === 14;
 }
 
+function useFecharAoClicarFora(
+  aberto: boolean,
+  setAberto: (v: boolean) => void,
+  ref: React.RefObject<HTMLElement | null>
+) {
+  useEffect(() => {
+    if (!aberto) return;
+    const onPointerDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setAberto(false);
+      }
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [aberto, setAberto, ref]);
+}
+
 function IconeCaderneta({ className }: { className?: string }) {
   return (
     <svg
@@ -359,8 +389,19 @@ export default function PagamentosMedicosPage() {
   const [busca, setBusca] = useState("");
   /** Vazio = todos os anos; senão apenas os anos listados (string "2023", "2024", …) */
   const [anosFiltro, setAnosFiltro] = useState<string[]>([]);
+  /** Vazio = todos os meses; só aplicável com exatamente um ano selecionado (valores "1"…"12") */
+  const [mesesFiltro, setMesesFiltro] = useState<string[]>([]);
   /** Vazio = todas as razões sociais; senão apenas as selecionadas */
   const [razoesSociaisFiltro, setRazoesSociaisFiltro] = useState<string[]>([]);
+  const [anosDropdownAberto, setAnosDropdownAberto] = useState(false);
+  const [mesesDropdownAberto, setMesesDropdownAberto] = useState(false);
+  const [razoesDropdownAberto, setRazoesDropdownAberto] = useState(false);
+  const anosDropdownRef = useRef<HTMLDivElement>(null);
+  const mesesDropdownRef = useRef<HTMLDivElement>(null);
+  const razoesDropdownRef = useRef<HTMLDivElement>(null);
+  useFecharAoClicarFora(anosDropdownAberto, setAnosDropdownAberto, anosDropdownRef);
+  useFecharAoClicarFora(mesesDropdownAberto, setMesesDropdownAberto, mesesDropdownRef);
+  useFecharAoClicarFora(razoesDropdownAberto, setRazoesDropdownAberto, razoesDropdownRef);
   const [ordenarPor, setOrdenarPor] = useState<OrdenarPor>("razao_social");
   const [ordemAsc, setOrdemAsc] = useState(true);
   const [atualizandoView, setAtualizandoView] = useState(false);
@@ -605,6 +646,10 @@ export default function PagamentosMedicosPage() {
   }, []);
 
   useEffect(() => {
+    if (anosFiltro.length !== 1) setMesesFiltro([]);
+  }, [anosFiltro]);
+
+  useEffect(() => {
     if (!irModalLinha) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && !irSalvando) {
@@ -646,9 +691,18 @@ export default function PagamentosMedicosPage() {
     }
   }
 
+  const anoUnicoFiltro = anosFiltro.length === 1 ? anosFiltro[0] : null;
+
   const { linhas, colunasMesAno, anosDisponiveis, razoesSociaisDisponiveis } = useMemo(() => {
-    const rowsFiltradas =
+    let rowsFiltradas =
       anosFiltro.length > 0 ? rows.filter((r) => anosFiltro.includes(String(r.ano))) : rows;
+
+    if (anoUnicoFiltro && mesesFiltro.length > 0) {
+      const mesesSet = new Set(mesesFiltro.map((m) => Number(m)));
+      rowsFiltradas = rowsFiltradas.filter(
+        (r) => String(r.ano) === anoUnicoFiltro && mesesSet.has(r.mes)
+      );
+    }
 
     const anosSet = new Set<number>();
     rows.forEach((r) => anosSet.add(r.ano));
@@ -718,54 +772,88 @@ export default function PagamentosMedicosPage() {
 
     // Ordenação aplicada depois (por estado ordenarPor/ordemAsc)
     return { linhas: linhasFiltradas, colunasMesAno, anosDisponiveis, razoesSociaisDisponiveis };
-  }, [rows, busca, anosFiltro, razoesSociaisFiltro]);
+  }, [rows, busca, anosFiltro, mesesFiltro, anoUnicoFiltro, razoesSociaisFiltro]);
 
   const linhasOrdenadas = useMemo(() => {
-    const ord = [...linhas];
-    function desempateMesmoMedico(a: ClienteLinha, b: ClienteLinha): number {
-      const e = (a.empresa || "").localeCompare(b.empresa || "", "pt-BR");
-      if (e !== 0) return e;
-      return ORDEM_TIPO_LINHA[a.tipoLinha] - ORDEM_TIPO_LINHA[b.tipoLinha];
+    type Block = {
+      key: string;
+      empresa: string;
+      razaoSocial: string;
+      doc: string;
+      rows: ClienteLinha[];
+      total: number;
+      porMes: Map<string, number>;
+    };
+
+    const blocksMap = new Map<string, Block>();
+    for (const l of linhas) {
+      const key = chaveBlocoOrdenacao(l);
+      if (!blocksMap.has(key)) {
+        blocksMap.set(key, {
+          key,
+          empresa: l.empresa || "",
+          razaoSocial: l.razao_social || "",
+          doc: l.cnpj_cpf_apenas_numeros || "",
+          rows: [],
+          total: 0,
+          porMes: new Map(),
+        });
+      }
+      blocksMap.get(key)!.rows.push(l);
     }
+
+    const blocks = Array.from(blocksMap.values());
+    blocks.forEach((b) => {
+      const totalRow = b.rows.find((r) => r.tipoLinha === "total_combinado");
+      if (totalRow) {
+        b.total = Number(totalRow.valor_total) || 0;
+        totalRow.porMes.forEach((v, km) => b.porMes.set(km, Number(v) || 0));
+      } else {
+        b.total = b.rows.reduce((s, r) => s + (Number(r.valor_total) || 0), 0);
+        b.rows.forEach((r) => {
+          r.porMes.forEach((v, km) => b.porMes.set(km, (b.porMes.get(km) ?? 0) + (Number(v) || 0)));
+        });
+      }
+      b.rows.sort((a, z) => ORDEM_TIPO_LINHA[a.tipoLinha] - ORDEM_TIPO_LINHA[z.tipoLinha]);
+    });
+
+    function cmpBaseRazao(a: Block, b: Block): number {
+      return (a.razaoSocial || "").localeCompare(b.razaoSocial || "", "pt-BR");
+    }
+    function cmpBaseDoc(a: Block, b: Block): number {
+      const x = (a.doc || "").padStart(14, "0");
+      const y = (b.doc || "").padStart(14, "0");
+      return x.localeCompare(y);
+    }
+    function cmpDesempate(a: Block, b: Block): number {
+      const n = cmpBaseRazao(a, b);
+      if (n !== 0) return n;
+      const d = cmpBaseDoc(a, b);
+      if (d !== 0) return d;
+      return (a.empresa || "").localeCompare(b.empresa || "", "pt-BR");
+    }
+
     if (ordenarPor === "razao_social") {
-      ord.sort((a, b) => {
-        const c = ordemAsc
-          ? (a.razao_social || "").localeCompare(b.razao_social || "", "pt-BR")
-          : (b.razao_social || "").localeCompare(a.razao_social || "", "pt-BR");
-        if (c !== 0) return c;
-        return desempateMesmoMedico(a, b);
-      });
+      blocks.sort((a, b) => (ordemAsc ? cmpBaseRazao(a, b) : cmpBaseRazao(b, a)) || cmpDesempate(a, b));
     } else if (ordenarPor === "cnpj_cpf") {
-      ord.sort((a, b) => {
-        const x = (a.cnpj_cpf_apenas_numeros || "").padStart(14, "0");
-        const y = (b.cnpj_cpf_apenas_numeros || "").padStart(14, "0");
-        const c = ordemAsc ? x.localeCompare(y) : y.localeCompare(x);
-        if (c !== 0) return c;
-        return desempateMesmoMedico(a, b);
-      });
+      blocks.sort((a, b) => (ordemAsc ? cmpBaseDoc(a, b) : cmpBaseDoc(b, a)) || cmpDesempate(a, b));
     } else if (ordenarPor.startsWith("mes:")) {
       const km = ordenarPor.slice(4);
-      ord.sort((a, b) => {
+      blocks.sort((a, b) => {
         const va = Number(a.porMes.get(km)) || 0;
         const vb = Number(b.porMes.get(km)) || 0;
-        if (va === vb) {
-          if (a.valor_total !== b.valor_total) return b.valor_total - a.valor_total;
-          const n = (a.razao_social || "").localeCompare(b.razao_social || "", "pt-BR");
-          if (n !== 0) return n;
-          return desempateMesmoMedico(a, b);
-        }
-        return ordemAsc ? va - vb : vb - va;
+        if (va !== vb) return ordemAsc ? va - vb : vb - va;
+        if (a.total !== b.total) return b.total - a.total;
+        return cmpDesempate(a, b);
       });
     } else {
-      ord.sort((a, b) => {
-        const d = ordemAsc ? a.valor_total - b.valor_total : b.valor_total - a.valor_total;
-        if (d !== 0) return d;
-        const n = (a.razao_social || "").localeCompare(b.razao_social || "", "pt-BR");
-        if (n !== 0) return n;
-        return desempateMesmoMedico(a, b);
+      blocks.sort((a, b) => {
+        if (a.total !== b.total) return ordemAsc ? a.total - b.total : b.total - a.total;
+        return cmpDesempate(a, b);
       });
     }
-    return ord;
+
+    return blocks.flatMap((b) => b.rows);
   }, [linhas, ordenarPor, ordemAsc]);
 
   /** Zebra por bloco (nome + CPF iguais): alterna fundo e marca início/fim de grupo com borda mais forte. */
@@ -822,8 +910,12 @@ export default function PagamentosMedicosPage() {
       if (anosFiltro.length > 0) {
         const km = competenciaParaKm(r.competencia);
         if (!km) return false;
-        const [yy] = km.split("_").map(Number);
+        const [yy, mm] = km.split("_").map(Number);
         if (!anosFiltro.includes(String(yy))) return false;
+        if (anoUnicoFiltro && mesesFiltro.length > 0) {
+          const mesesSet = new Set(mesesFiltro.map((m) => Number(m)));
+          if (!mesesSet.has(mm)) return false;
+        }
       }
       if (busca.trim()) {
         const termo = busca.trim().toLowerCase();
@@ -850,7 +942,7 @@ export default function PagamentosMedicosPage() {
       return aAno !== bAno ? aAno - bAno : aMes - bMes;
     });
     return { irExport, colunasExport };
-  }, [irRetidoRegistros, colunasMesAno, anosFiltro, busca, razoesSociaisFiltro]);
+  }, [irRetidoRegistros, colunasMesAno, anosFiltro, anoUnicoFiltro, mesesFiltro, busca, razoesSociaisFiltro]);
 
   function exportarExcel() {
     const { irExport, colunasExport } = contextoExportacao;
@@ -1142,6 +1234,13 @@ export default function PagamentosMedicosPage() {
     });
   }
 
+  function toggleMesFiltro(mesStr: string) {
+    setMesesFiltro((prev) => {
+      if (prev.includes(mesStr)) return prev.filter((m) => m !== mesStr);
+      return [...prev, mesStr].sort((a, b) => Number(a) - Number(b));
+    });
+  }
+
   function toggleRazaoSocialFiltro(razaoSocial: string) {
     setRazoesSociaisFiltro((prev) => {
       if (prev.includes(razaoSocial)) return prev.filter((r) => r !== razaoSocial);
@@ -1164,6 +1263,15 @@ export default function PagamentosMedicosPage() {
         ? razoesSociaisFiltro[0]
         : `${razoesSociaisFiltro.length} selecionadas`;
 
+  const resumoMesesFiltro =
+    mesesFiltro.length === 0
+      ? "Todos os meses"
+      : mesesFiltro
+          .slice()
+          .sort((a, b) => Number(a) - Number(b))
+          .map((m) => MESES_LABEL[Number(m) - 1])
+          .join(", ");
+
   return (
     <div className="p-4 max-w-full">
       <h1 className="text-2xl font-bold text-slate-800">Pagamentos realizados</h1>
@@ -1176,80 +1284,151 @@ export default function PagamentosMedicosPage() {
       <div className="mt-4 flex flex-wrap gap-4 items-center">
         <div className="flex items-start gap-2">
           <span className="text-slate-600 text-sm pt-2 shrink-0">Ano(s):</span>
-          <details className="relative group border border-slate-300 rounded bg-white min-w-[200px]">
-            <summary className="cursor-pointer list-none px-3 py-2 pr-8 text-sm text-slate-800 hover:bg-slate-50 rounded [&::-webkit-details-marker]:hidden">
+          <div ref={anosDropdownRef} className="relative border border-slate-300 rounded bg-white min-w-[200px]">
+            <button
+              type="button"
+              onClick={() => setAnosDropdownAberto((a) => !a)}
+              className="w-full text-left px-3 py-2 pr-8 text-sm text-slate-800 hover:bg-slate-50 rounded"
+              aria-expanded={anosDropdownAberto}
+            >
               <span className="block truncate max-w-[240px]" title={resumoAnosFiltro}>
                 {resumoAnosFiltro}
               </span>
-            </summary>
-            <div className="absolute left-0 top-full mt-1 z-50 min-w-full max-h-64 overflow-y-auto rounded border border-slate-200 bg-white py-2 shadow-lg">
+            </button>
+            {anosDropdownAberto && (
+              <div className="absolute left-0 top-full mt-1 z-50 min-w-full max-h-64 overflow-y-auto rounded border border-slate-200 bg-white py-2 shadow-lg">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAnosFiltro([]);
+                    setAnosDropdownAberto(false);
+                  }}
+                  className="w-full text-left px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100"
+                >
+                  Todos os anos
+                </button>
+                <div className="border-t border-slate-100 my-1" />
+                {anosDisponiveis.map((a) => {
+                  const s = String(a);
+                  const marcado = anosFiltro.includes(s);
+                  return (
+                    <label
+                      key={s}
+                      className="flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer hover:bg-slate-50"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={marcado}
+                        onChange={() => toggleAnoFiltro(s)}
+                        className="rounded border-slate-300"
+                      />
+                      <span>{s}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+        {anoUnicoFiltro && (
+          <div className="flex items-start gap-2">
+            <span className="text-slate-600 text-sm pt-2 shrink-0">Mês(es):</span>
+            <div ref={mesesDropdownRef} className="relative border border-slate-300 rounded bg-white min-w-[200px]">
               <button
                 type="button"
-                onClick={() => setAnosFiltro([])}
-                className="w-full text-left px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100"
+                onClick={() => setMesesDropdownAberto((a) => !a)}
+                className="w-full text-left px-3 py-2 pr-8 text-sm text-slate-800 hover:bg-slate-50 rounded"
+                aria-expanded={mesesDropdownAberto}
+                title={`Meses em ${anoUnicoFiltro} (ex.: Jan = ${MESES_LABEL[0]}/${anoUnicoFiltro.slice(-2)})`}
               >
-                Todos os anos
+                <span className="block truncate max-w-[240px]" title={resumoMesesFiltro}>
+                  {resumoMesesFiltro}
+                </span>
               </button>
-              <div className="border-t border-slate-100 my-1" />
-              {anosDisponiveis.map((a) => {
-                const s = String(a);
-                const marcado = anosFiltro.includes(s);
-                return (
-                  <label
-                    key={s}
-                    className="flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer hover:bg-slate-50"
+              {mesesDropdownAberto && (
+                <div className="absolute left-0 top-full mt-1 z-50 min-w-full max-h-64 overflow-y-auto rounded border border-slate-200 bg-white py-2 shadow-lg">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMesesFiltro([]);
+                      setMesesDropdownAberto(false);
+                    }}
+                    className="w-full text-left px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100"
                   >
-                    <input
-                      type="checkbox"
-                      checked={marcado}
-                      onChange={() => toggleAnoFiltro(s)}
-                      className="rounded border-slate-300"
-                    />
-                    <span>{s}</span>
-                  </label>
-                );
-              })}
+                    Todos os meses
+                  </button>
+                  <div className="border-t border-slate-100 my-1" />
+                  {MESES_LABEL.map((label, idx) => {
+                    const mesStr = String(idx + 1);
+                    const marcado = mesesFiltro.includes(mesStr);
+                    return (
+                      <label
+                        key={mesStr}
+                        className="flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer hover:bg-slate-50"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={marcado}
+                          onChange={() => toggleMesFiltro(mesStr)}
+                          className="rounded border-slate-300"
+                        />
+                        <span>{label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
             </div>
-          </details>
-        </div>
+          </div>
+        )}
         <div className="flex items-start gap-2">
           <span className="text-slate-600 text-sm pt-2 shrink-0">Razão social:</span>
-          <details className="relative group border border-slate-300 rounded bg-white min-w-[280px]">
-            <summary className="cursor-pointer list-none px-3 py-2 pr-8 text-sm text-slate-800 hover:bg-slate-50 rounded [&::-webkit-details-marker]:hidden">
+          <div ref={razoesDropdownRef} className="relative border border-slate-300 rounded bg-white min-w-[280px]">
+            <button
+              type="button"
+              onClick={() => setRazoesDropdownAberto((a) => !a)}
+              className="w-full text-left px-3 py-2 pr-8 text-sm text-slate-800 hover:bg-slate-50 rounded"
+              aria-expanded={razoesDropdownAberto}
+            >
               <span className="block truncate max-w-[320px]" title={resumoRazoesSociaisFiltro}>
                 {resumoRazoesSociaisFiltro}
               </span>
-            </summary>
-            <div className="absolute left-0 top-full mt-1 z-50 min-w-full max-h-64 overflow-y-auto rounded border border-slate-200 bg-white py-2 shadow-lg">
-              <button
-                type="button"
-                onClick={() => setRazoesSociaisFiltro([])}
-                className="w-full text-left px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100"
-              >
-                Todas as razões sociais
-              </button>
-              <div className="border-t border-slate-100 my-1" />
-              {razoesSociaisDisponiveis.map((razao) => {
-                const marcado = razoesSociaisFiltro.includes(razao);
-                return (
-                  <label
-                    key={razao}
-                    className="flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer hover:bg-slate-50"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={marcado}
-                      onChange={() => toggleRazaoSocialFiltro(razao)}
-                      className="rounded border-slate-300"
-                    />
-                    <span className="truncate" title={razao}>
-                      {razao}
-                    </span>
-                  </label>
-                );
-              })}
-            </div>
-          </details>
+            </button>
+            {razoesDropdownAberto && (
+              <div className="absolute left-0 top-full mt-1 z-50 min-w-full max-h-64 overflow-y-auto rounded border border-slate-200 bg-white py-2 shadow-lg">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRazoesSociaisFiltro([]);
+                    setRazoesDropdownAberto(false);
+                  }}
+                  className="w-full text-left px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100"
+                >
+                  Todas as razões sociais
+                </button>
+                <div className="border-t border-slate-100 my-1" />
+                {razoesSociaisDisponiveis.map((razao) => {
+                  const marcado = razoesSociaisFiltro.includes(razao);
+                  return (
+                    <label
+                      key={razao}
+                      className="flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer hover:bg-slate-50"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={marcado}
+                        onChange={() => toggleRazaoSocialFiltro(razao)}
+                        className="rounded border-slate-300"
+                      />
+                      <span className="truncate" title={razao}>
+                        {razao}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
         <input
           type="text"

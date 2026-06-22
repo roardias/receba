@@ -10,6 +10,7 @@ import csv
 import json
 import os
 import time
+from datetime import date, timedelta
 import requests
 from pathlib import Path
 
@@ -22,6 +23,12 @@ CSV_EMPRESAS = "exemplo_empresas.csv"
 PASTA_SAIDA = "output"
 CSV_SAIDA = "movimentos_financeiros_omie.csv"
 # Cada { } em categorias/departamentos vira uma nova linha no CSV
+
+
+def _ontem_omie() -> str:
+    """Retorna ontem no formato DD/MM/AAAA para filtro de previsão."""
+    d = date.today() - timedelta(days=1)
+    return d.strftime("%d/%m/%Y")
 
 
 def ler_empresas_csv(caminho: str) -> list[dict]:
@@ -37,6 +44,7 @@ def ler_empresas_csv(caminho: str) -> list[dict]:
 
 def _chamar_api_com_retry(app_key: str, app_secret: str, pagina: int) -> dict:
     """Chama a API com retry (teimosinha): até 5 tentativas, 30s entre cada."""
+    d_prev_ate = _ontem_omie()
     payload = {
         "call": "ListarMovimentos",
         "param": [
@@ -47,6 +55,8 @@ def _chamar_api_com_retry(app_key: str, app_secret: str, pagina: int) -> dict:
                 "cTpLancamento": "CR",
                 "lDadosCad": True,
                 "cExibirDepartamentos": "S",
+                "dDtPrevDe": "01/01/2000",
+                "dDtPrevAte": d_prev_ate,
             }
         ],
         "app_key": app_key,
