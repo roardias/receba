@@ -137,9 +137,12 @@ def executar_sync_pagamentos_realizados_empresas(
     label: str = "",
     dDtPagtoDe: str | None = None,
     dDtPagtoAte: str | None = None,
+    limpar_antes: bool = True,
 ) -> int:
     """Executa sync de pagamentos realizados para lista de empresas (usado pelo scheduler).
-    Datas para a API Omie: sempre fixas = hoje e hoje − ~10 anos (ignoramos agendamento e env)."""
+    Datas para a API Omie: sempre fixas = hoje e hoje − ~10 anos (ignoramos agendamento e env).
+    limpar_antes: se True, apaga a tabela inteira antes de inserir. No scheduler, deve ser True
+    apenas no PRIMEIRO job de pagamentos do ciclo; nos demais, False (para não apagar o que já foi inserido)."""
     from scheduler_status import limpar_em_execucao, registrar_em_execucao
 
     # Regra fixa: sempre usar hoje e ~10 anos para trás (não usar datas do agendamento)
@@ -147,8 +150,11 @@ def executar_sync_pagamentos_realizados_empresas(
     prefix = f"  [{label}] " if label else "  "
     print(f"{prefix}[Pagamentos Realizados] Omie: dDtPagtoDe={dDtPagtoDe!r} dDtPagtoAte={dDtPagtoAte!r} (período fixo: últimos ~10 anos)", flush=True)
 
-    print(f"{prefix}[Pagamentos Realizados] Limpando tabela pagamentos_realizados antes do insert...", flush=True)
-    limpar_tabela_pagamentos_realizados(supabase)
+    if limpar_antes:
+        print(f"{prefix}[Pagamentos Realizados] Limpando tabela pagamentos_realizados antes do insert...", flush=True)
+        limpar_tabela_pagamentos_realizados(supabase)
+    else:
+        print(f"{prefix}[Pagamentos Realizados] Tabela já foi limpa no início deste ciclo; mantendo dados já inseridos.", flush=True)
 
     total = 0
     for emp in empresas:

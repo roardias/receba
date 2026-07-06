@@ -293,6 +293,9 @@ def worker():
             label, grupo_ids, empresa_ids, api_tipos, pagamentos_data_de, pagamentos_data_ate = (
                 (job[0], job[1], job[2], job[3], job[4] if len(job) > 4 else None, job[5] if len(job) > 5 else None)
             )
+            # limpar_pagamentos: True apenas no primeiro job de pagamentos do ciclo (apaga a tabela 1x).
+            # Nos demais jobs de pagamentos do mesmo ciclo, False (não reapaga o que já foi inserido).
+            limpar_pagamentos = job[6] if len(job) > 6 else True
             try:
                 supabase = _get_supabase()
                 empresas = obter_empresas_para_sync(supabase, grupo_ids, empresa_ids)
@@ -335,6 +338,7 @@ def worker():
                             supabase, empresas, label,
                             dDtPagtoDe=pagamentos_data_de,
                             dDtPagtoAte=pagamentos_data_ate,
+                            limpar_antes=limpar_pagamentos,
                         )
                         total += n
                         print(f"  [{label}] Pagamentos realizados: {n} registros.", flush=True)
@@ -430,6 +434,9 @@ def ciclo(ignorar_horario: bool = False):
 
     jobs_ordenados = sorted(jobs_finais, key=lambda x: x[0].lower())
     adicionados = 0
+    # Apagar a tabela de pagamentos_realizados UMA ÚNICA VEZ por ciclo: só o primeiro job
+    # de pagamentos enfileirado recebe limpar_pagamentos=True; os demais, False.
+    pagamentos_ja_marcado_para_limpar = False
     for label, gids, eids, api_tipos, data_de, data_ate in jobs_ordenados:
         # Cooldown precisa considerar os tipos de API, senão um agendamento (ex.: pagamentos 04:30)
         # pode impedir outro do mesmo grupo (ex.: recebimentos 04:40).
@@ -443,7 +450,14 @@ def ciclo(ignorar_horario: bool = False):
             if now_ts - ULTIMO_ADDED[work_key] < COOLDOWN_SEGUNDOS:
                 continue
         ULTIMO_ADDED[work_key] = now_ts
-        SYNC_QUEUE.put((label, gids, eids, api_tipos, data_de, data_ate))
+        # Este job vai limpar a tabela de pagamentos apenas se tiver pagamentos_realizados
+        # e ainda não houve nenhum job de pagamentos marcado para limpar neste ciclo.
+        if "pagamentos_realizados" in (api_tipos or []) and not pagamentos_ja_marcado_para_limpar:
+            limpar_pagamentos = True
+            pagamentos_ja_marcado_para_limpar = True
+        else:
+            limpar_pagamentos = False
+        SYNC_QUEUE.put((label, gids, eids, api_tipos, data_de, data_ate, limpar_pagamentos))
         adicionados += 1
 
     if adicionados > 0:
