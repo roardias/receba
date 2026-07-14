@@ -48,7 +48,6 @@ if os.path.isfile(_env_local):
     load_dotenv(_env_local, override=False)
 
 TZ = ZoneInfo("America/Sao_Paulo")
-INTERVALO_SEGUNDOS = 60  # verifica a cada 60s o que está agendado e enfileira os jobs de API
 ULTIMO_LOG_VERBOSE = [None]
 SYNC_QUEUE = queue.Queue()
 SUPABASE_CLIENT = None
@@ -447,7 +446,13 @@ def ciclo(ignorar_horario: bool = False):
         )
         # Cooldown por work_key: evita enfileirar o mesmo job duas vezes seguidas (ex.: verificação às 16:51 e 16:52)
         if not ignorar_horario and work_key in ULTIMO_ADDED:
-            if now_ts - ULTIMO_ADDED[work_key] < COOLDOWN_SEGUNDOS:
+            decorrido = now_ts - ULTIMO_ADDED[work_key]
+            if decorrido < COOLDOWN_SEGUNDOS:
+                restante = COOLDOWN_SEGUNDOS - decorrido
+                print(
+                    f"  [{label}] Ignorado por cooldown: mesmo job (grupos/empresas/APIs) foi enfileirado há {decorrido // 60}min; aguarde {restante // 60 + 1}min.",
+                    flush=True,
+                )
                 continue
         ULTIMO_ADDED[work_key] = now_ts
         # Este job vai limpar a tabela de pagamentos apenas se tiver pagamentos_realizados
@@ -521,7 +526,11 @@ def main():
             break
         except Exception as e:
             print(f"Erro no ciclo: {e}", flush=True)
-        time.sleep(INTERVALO_SEGUNDOS)
+        # Dormir até o início do próximo minuto (+1s de folga), em vez de 60s fixos.
+        # Com sleep fixo, a checagem escorrega alguns segundos por ciclo e, quando cai
+        # no fim do minuto (ex.: :58), a próxima pula um minuto inteiro — agendamentos
+        # nesse minuto não disparam. Alinhando ao minuto, todo minuto é verificado.
+        time.sleep(max(1.0, 60.0 - (time.time() % 60.0) + 1.0))
 
 
 if __name__ == "__main__":
