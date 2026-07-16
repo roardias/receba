@@ -15,11 +15,16 @@ try:
 except Exception:
     pass
 import time
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 from supabase import create_client
+
+try:
+    from supabase import ClientOptions
+except ImportError:
+    from supabase.lib.client_options import ClientOptions
 
 from sync_clientes_supabase import (
     listar_clientes_omie_completo,
@@ -58,6 +63,13 @@ SUPABASE_CLIENT = None
 ULTIMO_ADDED = {}  # work_key -> timestamp da última vez que foi enfileirado
 COOLDOWN_SEGUNDOS = 15 * 60  # 15 min: não re-enfileirar o mesmo grupo+empresas (evita duplicata quando o job demora vários minutos)
 
+# Registro de execuções (api_agendamento_execucoes): cada vencimento de agendamento vira uma linha
+# no banco (UNIQUE agendamento_id+agendado_para). O scheduler pergunta "o que venceu e ainda não rodou?"
+# em vez de "agora é o minuto exato?" — cobre rede fora do ar, restart e reboot da VPS.
+JANELA_RECUPERACAO_HORAS = 6  # vencimentos até 6h atrás ainda são executados se ninguém os reivindicou
+LEDGER_AVISADO_INDISPONIVEL = [False]  # evita repetir o aviso quando a tabela ainda não existe
+OCORRENCIAS_TRATADAS = {}  # (agendamento_id, vencimento_iso) -> ts: já reivindicado/verificado por este processo (evita repetir upsert a cada minuto)
+
 
 def _get_supabase():
     """Retorna cliente Supabase (criado uma vez). Prefere service_role para bypass de RLS no sync."""
@@ -88,7 +100,9 @@ def _get_supabase():
         key = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_KEY")
         if not url or not key:
             raise ValueError("SUPABASE_URL (ou NEXT_PUBLIC_SUPABASE_URL) e SUPABASE_SERVICE_ROLE_KEY (ou SUPABASE_KEY) obrigatórios no .env ou frontend/.env.local")
-        SUPABASE_CLIENT = create_client(url, key)
+        # Timeout de 120s (padrão da lib é 5s): operações pesadas, como limpar/upsert de tabelas
+        # grandes, demoravam >5s e o timeout abortava o job no meio (tabela ficava vazia).
+        SUPABASE_CLIENT = create_client(url, key, options=ClientOptions(postgrest_client_timeout=120))
     return SUPABASE_CLIENT
 
 
@@ -165,6 +179,89 @@ def _normalizar_hora(s: str) -> str:
     return s
 
 
+def _ocorrencias_devidas(dias_int: list[int], horarios: list[str], agora: datetime) -> list[datetime]:
+    """
+    Vencimentos do agendamento dentro da janela [agora - JANELA_RECUPERACAO_HORAS, agora].
+    O dia da semana é avaliado no DIA DO VENCIMENTO (não no dia atual), para a madrugada
+    não perder vencimentos do dia anterior.
+    """
+    inicio = agora - timedelta(hours=JANELA_RECUPERACAO_HORAS)
+    ocorrencias = []
+    for delta_dias in (1, 0):  # ontem e hoje (janela < 24h)
+        dia = (agora - timedelta(days=delta_dias)).date()
+        if dia.isoweekday() not in dias_int:
+            continue
+        for h in horarios:
+            try:
+                hh, mm = h.split(":")
+                dt = datetime(dia.year, dia.month, dia.day, int(hh), int(mm), tzinfo=TZ)
+            except (ValueError, TypeError):
+                continue
+            if inicio <= dt <= agora:
+                ocorrencias.append(dt)
+    return ocorrencias
+
+
+def _reivindicar_execucao(supabase, agendamento_id: str, agendado_para: datetime, status: str = "pendente") -> str | None:
+    """
+    Tenta registrar o vencimento em api_agendamento_execucoes (ON CONFLICT DO NOTHING via
+    ignore_duplicates). Retorna o id da execução se ESTE processo a reivindicou agora;
+    None se já existia (outro ciclo/processo já tratou este vencimento).
+    """
+    res = (
+        supabase.table("api_agendamento_execucoes")
+        .upsert(
+            {
+                "agendamento_id": agendamento_id,
+                "agendado_para": agendado_para.astimezone(timezone.utc).isoformat(),
+                "status": status,
+            },
+            on_conflict="agendamento_id,agendado_para",
+            ignore_duplicates=True,
+        )
+        .execute()
+    )
+    if res.data:
+        return res.data[0]["id"]
+    return None
+
+
+def _ledger_indisponivel(e: Exception) -> bool:
+    """True se o erro indica que a tabela api_agendamento_execucoes ainda não existe no banco."""
+    msg = str(e)
+    return "api_agendamento_execucoes" in msg or "42P01" in msg
+
+
+def _avisar_ledger_indisponivel(e: Exception):
+    if not LEDGER_AVISADO_INDISPONIVEL[0]:
+        LEDGER_AVISADO_INDISPONIVEL[0] = True
+        print(
+            f"AVISO: tabela api_agendamento_execucoes indisponível ({e}). "
+            "Aplique a migration api_agendamento_execucoes.sql no Supabase. "
+            "Enquanto isso, o scheduler usa o disparo por minuto exato (sem recuperação de horários perdidos).",
+            flush=True,
+        )
+
+
+def _atualizar_execucoes(exec_ids: list[str], status: str, erro: str | None = None, marcar_inicio: bool = False, marcar_fim: bool = False):
+    """Atualiza status/horários das execuções no registro. Falha aqui não pode derrubar o job."""
+    if not exec_ids:
+        return
+    try:
+        supabase = _get_supabase()
+        payload = {"status": status}
+        agora_iso = datetime.now(timezone.utc).isoformat()
+        if marcar_inicio:
+            payload["iniciado_em"] = agora_iso
+        if marcar_fim:
+            payload["finalizado_em"] = agora_iso
+        if erro is not None:
+            payload["erro"] = str(erro)[:2000]
+        supabase.table("api_agendamento_execucoes").update(payload).in_("id", exec_ids).execute()
+    except Exception as e:
+        print(f"  Aviso: não foi possível atualizar status da execução no registro: {e}", flush=True)
+
+
 def _build_label_agendamento(supabase, grupo_ids: list, empresa_ids: list) -> str:
     """Monta label alfabética para ordenação (nomes de grupos e empresas)."""
     partes = []
@@ -179,23 +276,32 @@ def _build_label_agendamento(supabase, grupo_ids: list, empresa_ids: list) -> st
     return ", ".join(partes) if partes else "—"
 
 
-def listar_jobs_agora(supabase, ignorar_horario: bool = False) -> list[tuple[str, list[str], list[str], list[str], str | None, str | None]]:
+def listar_jobs_agora(supabase, ignorar_horario: bool = False) -> list[tuple[str, list[str], list[str], list[str], str | None, str | None, list[str]]]:
     """
-    Retorna lista de (label, grupo_ids, empresa_ids, api_tipos, pagamentos_data_de, pagamentos_data_ate) que devem rodar AGORA (UTC-3).
-    Cada agendamento corresponde a um job separado.
-    Se ignorar_horario=True (--agora), inclui todos os agendamentos ativos do dia atual, ignorando horário.
+    Retorna lista de (label, grupo_ids, empresa_ids, api_tipos, pagamentos_data_de, pagamentos_data_ate, exec_ids)
+    que devem rodar AGORA (UTC-3).
+    Modo normal: procura VENCIMENTOS dentro da janela de recuperação e reivindica cada um em
+    api_agendamento_execucoes (UNIQUE no banco garante execução única). Assim um horário não é
+    perdido se o scheduler estiver sem rede, reiniciando ou fora do ar no minuto exato.
+    Se ignorar_horario=True (--agora), inclui todos os agendamentos ativos do dia atual, sem registrar execuções.
+    Fallback: se a tabela de execuções ainda não existir, usa o disparo por minuto exato (comportamento antigo).
     """
     agora = datetime.now(TZ)
     dia_semana = agora.weekday() + 1  # 1=Seg, 7=Dom
     hora_atual = agora.strftime("%H:%M")
 
-    select_cols = "grupo_ids, empresa_ids, dias_semana, horarios, api_tipos, pagamentos_data_de, pagamentos_data_ate"
+    # Limpeza do cache de vencimentos tratados (evita crescimento sem limite)
+    limite_cache = time.time() - (JANELA_RECUPERACAO_HORAS + 1) * 3600
+    for k in [k for k, ts in OCORRENCIAS_TRATADAS.items() if ts < limite_cache]:
+        del OCORRENCIAS_TRATADAS[k]
+
+    select_cols = "id, grupo_ids, empresa_ids, dias_semana, horarios, api_tipos, pagamentos_data_de, pagamentos_data_ate"
     try:
         res = supabase.from_("api_agendamento").select(select_cols).eq("ativo", True).execute()
     except Exception as e:
         err_str = str(e).lower()
         if "pagamentos_data" in err_str or "column" in err_str or "schema" in err_str or "cache" in err_str:
-            select_cols = "grupo_ids, empresa_ids, dias_semana, horarios, api_tipos"
+            select_cols = "id, grupo_ids, empresa_ids, dias_semana, horarios, api_tipos"
             res = supabase.from_("api_agendamento").select(select_cols).eq("ativo", True).execute()
         else:
             raise
@@ -215,20 +321,52 @@ def listar_jobs_agora(supabase, ignorar_horario: bool = False) -> list[tuple[str
                 pass
         horarios = [_normalizar_hora(str(h)) for h in horarios_raw if h]
 
-        if dia_semana not in dias_int:
-            if debug:
-                print(f"  [DEBUG] Agendamento ignorado: dia {dia_semana} não está em {dias_int}", flush=True)
-            continue
-        if not ignorar_horario and hora_atual not in horarios:
-            if debug:
-                print(f"  [DEBUG] Agendamento ignorado: hora {hora_atual!r} não está em {horarios}", flush=True)
-            continue
+        exec_ids: list[str] = []
+        if ignorar_horario:
+            if dia_semana not in dias_int:
+                if debug:
+                    print(f"  [DEBUG] Agendamento ignorado: dia {dia_semana} não está em {dias_int}", flush=True)
+                continue
+        else:
+            ocorrencias = _ocorrencias_devidas(dias_int, horarios, agora)
+            if not ocorrencias:
+                if debug:
+                    print(f"  [DEBUG] Agendamento ignorado: hora {hora_atual!r} sem vencimento em {horarios} (dias {dias_int}, janela {JANELA_RECUPERACAO_HORAS}h)", flush=True)
+                continue
+            usar_minuto_exato = False
+            for dt in ocorrencias:
+                # Cache em memória: vencimento já reivindicado/verificado por este processo
+                # não precisa de novo upsert a cada minuto durante toda a janela.
+                occ_key = (a.get("id"), dt.isoformat())
+                if occ_key in OCORRENCIAS_TRATADAS:
+                    continue
+                try:
+                    exec_id = _reivindicar_execucao(supabase, a.get("id"), dt)
+                except Exception as e:
+                    if _ledger_indisponivel(e):
+                        _avisar_ledger_indisponivel(e)
+                        usar_minuto_exato = True
+                        break
+                    raise
+                OCORRENCIAS_TRATADAS[occ_key] = time.time()
+                if exec_id:
+                    exec_ids.append(exec_id)
+                    print(f"  Execução reivindicada: vencimento {dt.strftime('%d/%m %H:%M')} (agendamento {a.get('id')})", flush=True)
+            if usar_minuto_exato:
+                # Comportamento antigo (sem registro no banco): dispara só no minuto exato
+                if dia_semana not in dias_int or hora_atual not in horarios:
+                    continue
+            elif not exec_ids:
+                if debug:
+                    print(f"  [DEBUG] Agendamento ignorado: vencimento(s) {[d.strftime('%d/%m %H:%M') for d in ocorrencias]} já reivindicado(s)/executado(s).", flush=True)
+                continue
 
         gids = [g for g in (a.get("grupo_ids") or []) if g]
         eids = [e for e in (a.get("empresa_ids") or []) if e]
         if not gids and not eids:
             if debug:
                 print("  [DEBUG] Agendamento ignorado: sem grupo_ids nem empresa_ids", flush=True)
+            _atualizar_execucoes(exec_ids, "erro", erro="Agendamento sem grupo_ids nem empresa_ids", marcar_fim=True)
             continue
 
         api_tipos_raw = a.get("api_tipos") or ["clientes"]
@@ -239,14 +377,14 @@ def listar_jobs_agora(supabase, ignorar_horario: bool = False) -> list[tuple[str
         label = _build_label_agendamento(supabase, gids, eids)
         data_de = (a.get("pagamentos_data_de") or "").strip() or None
         data_ate = (a.get("pagamentos_data_ate") or "").strip() or None
-        jobs.append((label, gids, eids, api_tipos, data_de, data_ate))
+        jobs.append((label, gids, eids, api_tipos, data_de, data_ate, exec_ids))
 
     # LOG DETALHADO: jobs brutos por agendamento (apenas com SCHEDULER_DEBUG=1)
     if debug:
         print("  [DEBUG] Jobs bruto (por agendamento):", flush=True)
-        for (label, gids, eids, api_tipos, data_de, data_ate) in jobs:
+        for (label, gids, eids, api_tipos, data_de, data_ate, exec_ids) in jobs:
             print(
-                f"    label={label!r} gids={gids} eids={eids} apis={api_tipos} pag_de={data_de!r} pag_ate={data_ate!r}",
+                f"    label={label!r} gids={gids} eids={eids} apis={api_tipos} pag_de={data_de!r} pag_ate={data_ate!r} execucoes={len(exec_ids)}",
                 flush=True,
             )
 
@@ -295,7 +433,10 @@ def worker():
             # limpar_pagamentos: True apenas no primeiro job de pagamentos do ciclo (apaga a tabela 1x).
             # Nos demais jobs de pagamentos do mesmo ciclo, False (não reapaga o que já foi inserido).
             limpar_pagamentos = job[6] if len(job) > 6 else True
+            # exec_ids: execuções reivindicadas em api_agendamento_execucoes (status atualizado ao longo do job)
+            exec_ids = job[7] if len(job) > 7 else []
             try:
+                _atualizar_execucoes(exec_ids, "executando", marcar_inicio=True)
                 supabase = _get_supabase()
                 empresas = obter_empresas_para_sync(supabase, grupo_ids, empresa_ids)
                 print(
@@ -356,8 +497,10 @@ def worker():
                         print(f"  [{label}] Movimentos Geral (Títulos pagos / Títulos a vencer): {n} registros.", flush=True)
                     if "clientes" in api_tipos or "categorias" in api_tipos or "movimento_financeiro" in api_tipos or "movimentos_geral" in api_tipos or "pagamentos_realizados" in api_tipos or "recebimentos_omie" in api_tipos:
                         print(f"  [{label}] Total: {total} registros.", flush=True)
+                _atualizar_execucoes(exec_ids, "sucesso", marcar_fim=True)
             except Exception as e:
                 print(f"  [{label}] Erro: {e}", flush=True)
+                _atualizar_execucoes(exec_ids, "erro", erro=str(e), marcar_fim=True)
             finally:
                 SYNC_QUEUE.task_done()
         except queue.Empty:
@@ -396,38 +539,39 @@ def ciclo(ignorar_horario: bool = False):
 
     # Coalesce: jobs com mesmo (gids, eids) viram 1 job com api_tipos unificados; datas de pagamentos do primeiro que tiver
     jobs_unicos = {}
-    for label, gids, eids, api_tipos, data_de, data_ate in jobs:
+    for label, gids, eids, api_tipos, data_de, data_ate, exec_ids in jobs:
         work_key = (tuple(sorted(gids or [])), tuple(sorted(eids or [])))
         if work_key not in jobs_unicos:
-            jobs_unicos[work_key] = (label, gids, eids, set(api_tipos), data_de, data_ate)
+            jobs_unicos[work_key] = (label, gids, eids, set(api_tipos), data_de, data_ate, list(exec_ids))
         else:
-            _, _, _, apis, cur_de, cur_ate = jobs_unicos[work_key]
+            _, _, _, apis, cur_de, cur_ate, cur_execs = jobs_unicos[work_key]
             apis.update(api_tipos)
+            cur_execs.extend(exec_ids)
             if "pagamentos_realizados" in api_tipos and (not cur_de or not cur_ate) and (data_de and data_ate):
-                jobs_unicos[work_key] = (label, gids, eids, apis, data_de, data_ate)
+                jobs_unicos[work_key] = (label, gids, eids, apis, data_de, data_ate, cur_execs)
             else:
-                jobs_unicos[work_key] = (label, gids, eids, apis, cur_de, cur_ate)
+                jobs_unicos[work_key] = (label, gids, eids, apis, cur_de, cur_ate, cur_execs)
 
     jobs_finais = []
     ordem_apis = ("clientes", "categorias", "movimento_financeiro", "movimentos_geral", "pagamentos_realizados", "recebimentos_omie")
-    for work_key, (label, gids, eids, apis_set, data_de, data_ate) in jobs_unicos.items():
+    for work_key, (label, gids, eids, apis_set, data_de, data_ate, exec_ids) in jobs_unicos.items():
         api_tipos = [t for t in ordem_apis if t in apis_set]
         if not api_tipos:
             api_tipos = ["clientes"]
-        jobs_finais.append((label, gids, eids, api_tipos, data_de, data_ate))
+        jobs_finais.append((label, gids, eids, api_tipos, data_de, data_ate, exec_ids))
 
     if debug:
         print("  [DEBUG] Jobs unificados por (grupo_ids, empresa_ids):", flush=True)
-        for (gids_key, eids_key), (label, gids, eids, apis_set, data_de, data_ate) in jobs_unicos.items():
+        for (gids_key, eids_key), (label, gids, eids, apis_set, data_de, data_ate, exec_ids) in jobs_unicos.items():
             print(
-                f"    work_key_gids={list(gids_key)} work_key_eids={list(eids_key)} label={label!r} apis_set={sorted(list(apis_set))} pag_de={data_de!r} pag_ate={data_ate!r}",
+                f"    work_key_gids={list(gids_key)} work_key_eids={list(eids_key)} label={label!r} apis_set={sorted(list(apis_set))} pag_de={data_de!r} pag_ate={data_ate!r} execucoes={len(exec_ids)}",
                 flush=True,
             )
 
         print("  [DEBUG] Jobs finais (ordem interna de APIs aplicada):", flush=True)
-        for (label, gids, eids, api_tipos, data_de, data_ate) in jobs_finais:
+        for (label, gids, eids, api_tipos, data_de, data_ate, exec_ids) in jobs_finais:
             print(
-                f"    label={label!r} gids={gids} eids={eids} api_tipos_ordenados={api_tipos} pag_de={data_de!r} pag_ate={data_ate!r}",
+                f"    label={label!r} gids={gids} eids={eids} api_tipos_ordenados={api_tipos} pag_de={data_de!r} pag_ate={data_ate!r} execucoes={len(exec_ids)}",
                 flush=True,
             )
 
@@ -436,7 +580,7 @@ def ciclo(ignorar_horario: bool = False):
     # Apagar a tabela de pagamentos_realizados UMA ÚNICA VEZ por ciclo: só o primeiro job
     # de pagamentos enfileirado recebe limpar_pagamentos=True; os demais, False.
     pagamentos_ja_marcado_para_limpar = False
-    for label, gids, eids, api_tipos, data_de, data_ate in jobs_ordenados:
+    for label, gids, eids, api_tipos, data_de, data_ate, exec_ids in jobs_ordenados:
         # Cooldown precisa considerar os tipos de API, senão um agendamento (ex.: pagamentos 04:30)
         # pode impedir outro do mesmo grupo (ex.: recebimentos 04:40).
         work_key = (
@@ -444,8 +588,9 @@ def ciclo(ignorar_horario: bool = False):
             tuple(sorted(eids or [])),
             tuple(api_tipos or []),
         )
-        # Cooldown por work_key: evita enfileirar o mesmo job duas vezes seguidas (ex.: verificação às 16:51 e 16:52)
-        if not ignorar_horario and work_key in ULTIMO_ADDED:
+        # Cooldown por work_key: só se aplica a jobs SEM execução reivindicada no banco
+        # (com execução reivindicada, a UNIQUE de api_agendamento_execucoes já garante execução única).
+        if not ignorar_horario and not exec_ids and work_key in ULTIMO_ADDED:
             decorrido = now_ts - ULTIMO_ADDED[work_key]
             if decorrido < COOLDOWN_SEGUNDOS:
                 restante = COOLDOWN_SEGUNDOS - decorrido
@@ -462,11 +607,97 @@ def ciclo(ignorar_horario: bool = False):
             pagamentos_ja_marcado_para_limpar = True
         else:
             limpar_pagamentos = False
-        SYNC_QUEUE.put((label, gids, eids, api_tipos, data_de, data_ate, limpar_pagamentos))
+        SYNC_QUEUE.put((label, gids, eids, api_tipos, data_de, data_ate, limpar_pagamentos, exec_ids))
         adicionados += 1
 
     if adicionados > 0:
         print(f"[{datetime.now(TZ).strftime('%H:%M:%S')}] {adicionados} job(s) adicionado(s) à fila (ordem: {', '.join(j[0] for j in jobs_ordenados)})", flush=True)
+
+
+def preparar_registro_execucoes():
+    """
+    Chamada uma vez na inicialização do scheduler:
+    1) Primeiro uso (tabela vazia): marca os vencimentos recentes como 'inicializacao', para o
+       período anterior à criação do registro não ser executado retroativamente no deploy.
+    2) Usos seguintes: reenfileira execuções 'pendente'/'executando' dentro da janela de
+       recuperação — casos em que o processo caiu depois de reivindicar e antes de concluir.
+    """
+    try:
+        supabase = _get_supabase()
+        res = supabase.table("api_agendamento_execucoes").select("id").limit(1).execute()
+    except Exception as e:
+        if _ledger_indisponivel(e):
+            _avisar_ledger_indisponivel(e)
+        else:
+            print(f"AVISO: não foi possível verificar o registro de execuções: {e}", flush=True)
+        return
+
+    agora = datetime.now(TZ)
+
+    if not (res.data or []):
+        try:
+            ags = supabase.from_("api_agendamento").select("id, dias_semana, horarios").eq("ativo", True).execute()
+            n = 0
+            for a in ags.data or []:
+                dias_int = []
+                for d in a.get("dias_semana") or []:
+                    try:
+                        v = int(d)
+                        if 1 <= v <= 7:
+                            dias_int.append(v)
+                    except (ValueError, TypeError):
+                        pass
+                horarios = [_normalizar_hora(str(h)) for h in (a.get("horarios") or []) if h]
+                for dt in _ocorrencias_devidas(dias_int, horarios, agora):
+                    if _reivindicar_execucao(supabase, a["id"], dt, status="inicializacao"):
+                        n += 1
+            print(f"Registro de execuções inicializado: {n} vencimento(s) recente(s) marcado(s) como 'inicializacao' (não executam retroativamente).", flush=True)
+        except Exception as e:
+            print(f"AVISO: falha ao inicializar registro de execuções: {e}", flush=True)
+        return
+
+    try:
+        inicio_iso = (agora - timedelta(hours=JANELA_RECUPERACAO_HORAS)).astimezone(timezone.utc).isoformat()
+        pend = (
+            supabase.table("api_agendamento_execucoes")
+            .select("id, agendamento_id, agendado_para, status")
+            .in_("status", ["pendente", "executando"])
+            .gte("agendado_para", inicio_iso)
+            .execute()
+        )
+        rows = pend.data or []
+        if not rows:
+            return
+        print(f"Recuperando {len(rows)} execução(ões) interrompida(s) (reivindicadas e não concluídas)...", flush=True)
+        pagamentos_ja_marcado_para_limpar = False
+        for row in rows:
+            try:
+                ag_res = supabase.from_("api_agendamento").select("*").eq("id", row["agendamento_id"]).limit(1).execute()
+                ag = (ag_res.data or [None])[0]
+                if not ag or not ag.get("ativo", True):
+                    _atualizar_execucoes([row["id"]], "erro", erro="Agendamento não encontrado ou inativo na recuperação", marcar_fim=True)
+                    continue
+                gids = [g for g in (ag.get("grupo_ids") or []) if g]
+                eids = [e for e in (ag.get("empresa_ids") or []) if e]
+                if not gids and not eids:
+                    _atualizar_execucoes([row["id"]], "erro", erro="Agendamento sem grupo_ids nem empresa_ids", marcar_fim=True)
+                    continue
+                api_tipos_raw = ag.get("api_tipos") or ["clientes"]
+                api_tipos = [t for t in api_tipos_raw if t in ("clientes", "categorias", "movimento_financeiro", "movimentos_geral", "pagamentos_realizados", "recebimentos_omie")] or ["clientes"]
+                label = _build_label_agendamento(supabase, gids, eids)
+                data_de = (ag.get("pagamentos_data_de") or "").strip() or None
+                data_ate = (ag.get("pagamentos_data_ate") or "").strip() or None
+                if "pagamentos_realizados" in api_tipos and not pagamentos_ja_marcado_para_limpar:
+                    limpar_pagamentos = True
+                    pagamentos_ja_marcado_para_limpar = True
+                else:
+                    limpar_pagamentos = False
+                SYNC_QUEUE.put((label, gids, eids, api_tipos, data_de, data_ate, limpar_pagamentos, [row["id"]]))
+                print(f"  Reenfileirada: {label} (vencimento {row.get('agendado_para')}, status anterior: {row.get('status')})", flush=True)
+            except Exception as e:
+                print(f"  AVISO: falha ao recuperar execução {row.get('id')}: {e}", flush=True)
+    except Exception as e:
+        print(f"AVISO: falha na recuperação de execuções interrompidas: {e}", flush=True)
 
 
 def main():
@@ -508,6 +739,9 @@ def main():
 
     t = threading.Thread(target=worker, daemon=True)
     t.start()
+
+    if not forcar_agora:
+        preparar_registro_execucoes()
 
     if forcar_agora:
         ciclo(ignorar_horario=True)

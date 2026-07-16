@@ -5,11 +5,17 @@ Logs em api_sync_log. Datas dDtPagtoDe/dDtPagtoAte via env (PAGAMENTOS_PAGTO_DE,
 """
 import os
 import re
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
 from supabase import create_client
+
+try:
+    from supabase import ClientOptions
+except ImportError:
+    from supabase.lib.client_options import ClientOptions
 
 from api_omie_pagamentos_realizados import (
     listar_pagamentos_paginado,
@@ -125,10 +131,31 @@ def registrar_log(supabase, empresa_nome: str, status: str, registros: int = 0, 
 
 def limpar_tabela_pagamentos_realizados(supabase):
     """
-    Remove todos os registros antes de uma nova carga completa.
-    Usa filtro por coluna texto para evitar erro de cast em UUID no PostgREST.
+    Esvazia a tabela antes de uma nova carga completa.
+    Preferência: RPC truncate_pagamentos_realizados (TRUNCATE é imediato e não estoura o
+    timeout do cliente — o DELETE via PostgREST demorava >5s em tabela grande e abortava o job).
+    Fallback: DELETE via PostgREST, caso a função ainda não exista no banco.
+    Retry: 3 tentativas com 10s de espera, para oscilação de rede não derrubar o job inteiro.
     """
-    supabase.table("pagamentos_realizados").delete().not_.is_("empresa", "null").execute()
+    ultima_exc = None
+    for tentativa in range(1, 4):
+        try:
+            try:
+                supabase.rpc("truncate_pagamentos_realizados").execute()
+            except Exception as e:
+                if "truncate_pagamentos_realizados" in str(e):
+                    # Função ainda não criada no Supabase: usa o DELETE antigo
+                    print("  [Pagamentos Realizados] Aviso: função truncate_pagamentos_realizados não existe no banco; usando DELETE (mais lento). Aplique a migration truncate_pagamentos_realizados_fn.sql.", flush=True)
+                    supabase.table("pagamentos_realizados").delete().not_.is_("empresa", "null").execute()
+                else:
+                    raise
+            return
+        except Exception as e:
+            ultima_exc = e
+            print(f"  [Pagamentos Realizados] Falha ao limpar tabela (tentativa {tentativa}/3): {e}", flush=True)
+            if tentativa < 3:
+                time.sleep(10)
+    raise ultima_exc
 
 
 def executar_sync_pagamentos_realizados_empresas(
@@ -211,6 +238,21 @@ def _registros_duplicados_no_lote(batch: list[dict]) -> list[dict]:
     return duplicados
 
 
+def _upsert_lote_com_retry(supabase, batch: list[dict]):
+    """Upsert com retry apenas para falhas transitórias (timeout/conexão). Erro de dados estoura direto."""
+    for tentativa in range(1, 4):
+        try:
+            return supabase.table("pagamentos_realizados").upsert(batch, on_conflict=CONFLICT_COLUMNS).execute()
+        except Exception as e:
+            msg = str(e).lower()
+            transitorio = "timed out" in msg or "timeout" in msg or "connection" in msg or "temporarily" in msg
+            if transitorio and tentativa < 3:
+                print(f"  [Pagamentos Realizados] Falha transitória no upsert (tentativa {tentativa}/3): {e}", flush=True)
+                time.sleep(10)
+                continue
+            raise
+
+
 def upsert_batch(supabase, registros: list[dict]) -> int:
     total = 0
     for i in range(0, len(registros), BATCH_SIZE):
@@ -219,7 +261,7 @@ def upsert_batch(supabase, registros: list[dict]) -> int:
             for r in registros[i : i + BATCH_SIZE]
         ]
         try:
-            supabase.table("pagamentos_realizados").upsert(batch, on_conflict=CONFLICT_COLUMNS).execute()
+            _upsert_lote_com_retry(supabase, batch)
             total += len(batch)
         except Exception as e:
             err_msg = str(e)
@@ -267,7 +309,8 @@ def main():
     if not dDtPagtoDe or not dDtPagtoAte:
         dDtPagtoDe, dDtPagtoAte = _datas_padrao_pagamento()
 
-    supabase = create_client(url, key)
+    # Timeout de 120s (padrão da lib é 5s — insuficiente para operações pesadas)
+    supabase = create_client(url, key, options=ClientOptions(postgrest_client_timeout=120))
     print("[Pagamentos Realizados] Limpando tabela pagamentos_realizados antes do insert...", flush=True)
     limpar_tabela_pagamentos_realizados(supabase)
     total_geral = 0
