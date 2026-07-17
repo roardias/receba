@@ -960,6 +960,8 @@ export default function PagamentosMedicosPage() {
     const data: (string | number)[][] = [headers];
 
     linhasOrdenadas.forEach((l) => {
+      // Linha "Total" (repasse + resp. técnico) é só visual na grade; no Excel duplicaria os valores.
+      if (l.tipoLinha === "total_combinado") return;
       const row: (string | number)[] = [
         textoParaExcel(l.empresa),
         textoParaExcel(l.razao_social),
