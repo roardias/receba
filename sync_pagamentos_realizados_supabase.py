@@ -141,7 +141,8 @@ def limpar_tabela_pagamentos_realizados(supabase):
     for tentativa in range(1, 4):
         try:
             try:
-                supabase.rpc("truncate_pagamentos_realizados").execute()
+                # params={} é obrigatório: nesta versão da lib, rpc() sem params lança TypeError
+                supabase.rpc("truncate_pagamentos_realizados", {}).execute()
             except Exception as e:
                 if "truncate_pagamentos_realizados" in str(e):
                     # Função ainda não criada no Supabase: usa o DELETE antigo
@@ -346,7 +347,7 @@ def main():
 
     print(f"\nTotal processado: {total_geral} registros (ValPago_validado > 0)")
     try:
-        supabase.rpc("refresh_view_concimed_pagamentos_realizados").execute()
+        supabase.rpc("refresh_view_concimed_pagamentos_realizados", {}).execute()
         print("View Concimed (pagamentos realizados) atualizada.")
     except Exception as e:
         print(f"Aviso: refresh view Concimed: {e}")

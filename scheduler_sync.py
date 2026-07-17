@@ -455,7 +455,7 @@ def worker():
                         total += n
                         print(f"  [{label}] Clientes: {n} registros.", flush=True)
                         try:
-                            supabase.rpc("refresh_dashboard_receber_apos_acessorias").execute()
+                            supabase.rpc("refresh_dashboard_receber_apos_acessorias", {}).execute()
                             print(f"  [{label}] Grupos/view inadimplentes atualizados.", flush=True)
                         except Exception as e:
                             print(f"  [{label}] Aviso: refresh grupos/dashboard: {e}", flush=True)
@@ -469,7 +469,7 @@ def worker():
                         total += n
                         print(f"  [{label}] Movimentos: {n} registros.", flush=True)
                         try:
-                            supabase.rpc("refresh_dashboard_receber_apos_acessorias").execute()
+                            supabase.rpc("refresh_dashboard_receber_apos_acessorias", {}).execute()
                             print(f"  [{label}] Grupos/view inadimplentes atualizados.", flush=True)
                         except Exception as e:
                             print(f"  [{label}] Aviso: refresh grupos/dashboard: {e}", flush=True)
@@ -483,7 +483,7 @@ def worker():
                         total += n
                         print(f"  [{label}] Pagamentos realizados: {n} registros.", flush=True)
                         try:
-                            supabase.rpc("refresh_view_concimed_pagamentos_realizados").execute()
+                            supabase.rpc("refresh_view_concimed_pagamentos_realizados", {}).execute()
                             print(f"  [{label}] View Concimed (pagamentos) atualizada.", flush=True)
                         except Exception as e:
                             print(f"  [{label}] Aviso: refresh view Concimed: {e}", flush=True)
