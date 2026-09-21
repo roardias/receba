@@ -1,6 +1,6 @@
--- Exceção: Ronaldo Rodrigues da Cunha e Guilherme Benevenuto mantêm a REGRA ANTIGA
--- (anterior a abr/2026): primeiro Baixa Competência (até o limite do mês) e só o
--- excedente vai para Baixa Ata 2025.
+-- Exceção: Ronaldo Rodrigues da Cunha, Guilherme Benevenuto e Silvia Regina Costa
+-- Crispim de Sousa mantêm a REGRA ANTIGA (anterior a abr/2026): primeiro Baixa
+-- Competência (até o limite do mês) e só o excedente vai para Baixa Ata 2025.
 -- A regra geral de abr/2026+ (com saldo ATA e total <= limite, baixa primeiro da Ata)
 -- continua valendo para os demais médicos. Exceções do Rafael e do Bruno preservadas.
 
@@ -93,6 +93,7 @@ rec AS (
       WHEN (o.ano > 2026 OR (o.ano = 2026 AND o.mes >= 4))
         AND o.nome NOT ILIKE 'Ronaldo Rodrigues da Cunha'
         AND o.nome NOT ILIKE 'Guilherme Benevenuto%'
+        AND o.nome NOT ILIKE 'Silvia Regina Costa Crispim%'
         AND o.valor_ata > 0
         AND o.total_pago_mes <= o.limite_regra
         THEN (o.total_pago_mes - LEAST(o.total_pago_mes, o.valor_ata))::NUMERIC(20,2)
@@ -105,6 +106,7 @@ rec AS (
       WHEN (o.ano > 2026 OR (o.ano = 2026 AND o.mes >= 4))
         AND o.nome NOT ILIKE 'Ronaldo Rodrigues da Cunha'
         AND o.nome NOT ILIKE 'Guilherme Benevenuto%'
+        AND o.nome NOT ILIKE 'Silvia Regina Costa Crispim%'
         AND o.valor_ata > 0
         AND o.total_pago_mes <= o.limite_regra
         THEN LEAST(o.total_pago_mes, o.valor_ata)::NUMERIC(20,2)
@@ -117,6 +119,7 @@ rec AS (
       WHEN (o.ano > 2026 OR (o.ano = 2026 AND o.mes >= 4))
         AND o.nome NOT ILIKE 'Ronaldo Rodrigues da Cunha'
         AND o.nome NOT ILIKE 'Guilherme Benevenuto%'
+        AND o.nome NOT ILIKE 'Silvia Regina Costa Crispim%'
         AND o.valor_ata > 0
         AND o.total_pago_mes <= o.limite_regra
         THEN (o.valor_ata - LEAST(o.total_pago_mes, o.valor_ata))::NUMERIC(20,2)
@@ -143,6 +146,7 @@ rec AS (
       WHEN (o.ano > 2026 OR (o.ano = 2026 AND o.mes >= 4))
         AND o.nome NOT ILIKE 'Ronaldo Rodrigues da Cunha'
         AND o.nome NOT ILIKE 'Guilherme Benevenuto%'
+        AND o.nome NOT ILIKE 'Silvia Regina Costa Crispim%'
         AND r.saldo_ata_final > 0
         AND o.total_pago_mes <= o.limite_regra
         THEN (o.total_pago_mes - LEAST(o.total_pago_mes, r.saldo_ata_final))::NUMERIC(20,2)
@@ -158,6 +162,7 @@ rec AS (
       WHEN (o.ano > 2026 OR (o.ano = 2026 AND o.mes >= 4))
         AND o.nome NOT ILIKE 'Ronaldo Rodrigues da Cunha'
         AND o.nome NOT ILIKE 'Guilherme Benevenuto%'
+        AND o.nome NOT ILIKE 'Silvia Regina Costa Crispim%'
         AND r.saldo_ata_final > 0
         AND o.total_pago_mes <= o.limite_regra
         THEN LEAST(o.total_pago_mes, r.saldo_ata_final)::NUMERIC(20,2)
@@ -173,6 +178,7 @@ rec AS (
       WHEN (o.ano > 2026 OR (o.ano = 2026 AND o.mes >= 4))
         AND o.nome NOT ILIKE 'Ronaldo Rodrigues da Cunha'
         AND o.nome NOT ILIKE 'Guilherme Benevenuto%'
+        AND o.nome NOT ILIKE 'Silvia Regina Costa Crispim%'
         AND r.saldo_ata_final > 0
         AND o.total_pago_mes <= o.limite_regra
         THEN (r.saldo_ata_final - LEAST(o.total_pago_mes, r.saldo_ata_final))::NUMERIC(20,2)
@@ -208,7 +214,7 @@ WHERE c.saldo_ata_inicial > 0
 ORDER BY det.nome, det.ano, det.mes;
 
 COMMENT ON VIEW view_controle_dividendos_ata_2025 IS
-  'Controle até zerar saldo ata 2025 (Iris). A partir de abr/26, com saldo ATA, baixa usa o valor do mês até zerar (inclusive abaixo do limite). Exceções: Rafael (abr/26), Bruno (abr/26), Ronaldo Rodrigues da Cunha e Guilherme Benevenuto (mantêm regra antiga: competência primeiro).';
+  'Controle até zerar saldo ata 2025 (Iris). A partir de abr/26, com saldo ATA, baixa usa o valor do mês até zerar (inclusive abaixo do limite). Exceções: Rafael (abr/26), Bruno (abr/26), Ronaldo Rodrigues da Cunha, Guilherme Benevenuto e Silvia Regina Costa Crispim de Sousa (mantêm regra antiga: competência primeiro).';
 
 GRANT SELECT ON view_controle_dividendos_ata_2025 TO anon;
 GRANT SELECT ON view_controle_dividendos_ata_2025 TO service_role;

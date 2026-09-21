@@ -25,7 +25,7 @@ Este arquivo registra excecoes de regra para manter historico e facilitar novos 
   - Baixa Ata 2025 no mes deve ser 152.910,64;
   - competencia e saldo final passam a ser recalculados com base nessa baixa.
 
-- Medicos: Ronaldo Rodrigues da Cunha e Guilherme Benevenuto
+- Medicos: Ronaldo Rodrigues da Cunha, Guilherme Benevenuto e Silvia Regina Costa Crispim de Sousa
 - Mes/ano: Abr/2026 em diante (permanente)
 - Regra aplicada:
   - mantem a REGRA ANTIGA (anterior a abr/2026): baixa primeiro pela Competencia (ate o limite do mes)
