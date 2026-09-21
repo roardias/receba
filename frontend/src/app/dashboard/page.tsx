@@ -379,7 +379,10 @@ export default function DashboardPage() {
   const [grupos, setGrupos] = useState<Grupo[]>([]);
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [grupoId, setGrupoId] = useState<string>("");
-  const [empresaId, setEmpresaId] = useState<string>("");
+  /** Empresas marcadas no filtro (multi-seleção). Padrão: todas as do grupo. */
+  const [empresasSelecionadasIds, setEmpresasSelecionadasIds] = useState<string[]>([]);
+  const [filtroEmpresaPainelAberto, setFiltroEmpresaPainelAberto] = useState(false);
+  const filtroEmpresaRef = useRef<HTMLDivElement>(null);
   const [dados, setDados] = useState<DashboardRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingDados, setLoadingDados] = useState(false);
@@ -463,18 +466,27 @@ export default function DashboardPage() {
       ? empresas.filter((e) => e.grupo_id === grupoId)
       : empresas;
 
-  const empresaSelecionada = empresasFiltradas.find((e) => e.id === empresaId);
-  const nomesCurtosGrupo = empresasFiltradas.map((e) => e.nome_curto);
+  const empresasSelecionadas = empresasFiltradas.filter((e) => empresasSelecionadasIds.includes(e.id));
+  const todasEmpresasMarcadas = empresasFiltradas.length > 0 && empresasSelecionadas.length === empresasFiltradas.length;
+  const nomesCurtosSelecionados = empresasSelecionadas.map((e) => e.nome_curto);
+  /** Quando exatamente 1 empresa está marcada, registros de contato guardam o id dela (como antes). */
+  const empresaIdUnicaSelecionada = empresasSelecionadas.length === 1 ? empresasSelecionadas[0].id : null;
   const deveCarregar = !!grupoId;
-  const contextEmpresaIds: string[] =
-    !grupoId ? [] : empresaSelecionada ? [empresaSelecionada.id] : empresasFiltradas.map((e) => e.id);
+  const contextEmpresaIds: string[] = !grupoId ? [] : empresasSelecionadas.map((e) => e.id);
+
+  // Ao escolher/trocar o grupo (ou carregar as empresas), todas as empresas do grupo vêm marcadas.
+  useEffect(() => {
+    setEmpresasSelecionadasIds(
+      grupoId ? empresas.filter((e) => e.grupo_id === grupoId).map((e) => e.id) : []
+    );
+  }, [grupoId, empresas]);
 
   useEffect(() => {
     if (!deveCarregar) {
       setDados([]);
       return;
     }
-    if (nomesCurtosGrupo.length === 0) {
+    if (nomesCurtosSelecionados.length === 0) {
       setDados([]);
       setLoadingDados(false);
       return;
@@ -485,11 +497,7 @@ export default function DashboardPage() {
       .from("view_dashboard_receber")
       .select("*")
       .order("det_ddtprevisao", { ascending: true });
-    if (empresaSelecionada) {
-      q = q.eq("empresa", empresaSelecionada.nome_curto);
-    } else {
-      q = q.in("empresa", nomesCurtosGrupo);
-    }
+    q = q.in("empresa", nomesCurtosSelecionados);
     q.then(({ data, error }) => {
       if (cancelled) return;
       setLoadingDados(false);
@@ -503,7 +511,7 @@ export default function DashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, [deveCarregar, empresaSelecionada?.nome_curto, nomesCurtosGrupo.join(","), refreshTrigger]);
+  }, [deveCarregar, nomesCurtosSelecionados.join(","), refreshTrigger]);
 
   const dadosVisiveis = useMemo(
     () =>
@@ -542,7 +550,8 @@ export default function DashboardPage() {
 
   function handleGrupoChange(e: React.ChangeEvent<HTMLSelectElement>) {
     setGrupoId(e.target.value);
-    setEmpresaId("");
+    setFiltroEmpresaPainelAberto(false);
+    // A seleção de empresas volta ao padrão (todas marcadas) via useEffect de grupoId/empresas.
   }
 
   async function forcarAtualizacaoView() {
@@ -659,6 +668,30 @@ export default function DashboardPage() {
       document.removeEventListener("keydown", handleKeyDown, true);
     };
   }, [filtroStatusPainelAberto]);
+
+  function toggleEmpresaSelecionada(id: string) {
+    setEmpresasSelecionadasIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  }
+
+  useEffect(() => {
+    if (!filtroEmpresaPainelAberto) return;
+    function handlePointerDown(e: PointerEvent) {
+      const root = filtroEmpresaRef.current;
+      if (!root || root.contains(e.target as Node)) return;
+      setFiltroEmpresaPainelAberto(false);
+    }
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setFiltroEmpresaPainelAberto(false);
+    }
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    document.addEventListener("keydown", handleKeyDown, true);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown, true);
+      document.removeEventListener("keydown", handleKeyDown, true);
+    };
+  }, [filtroEmpresaPainelAberto]);
 
   const totaisColunas = useMemo(
     () =>
@@ -1110,9 +1143,7 @@ export default function DashboardPage() {
               return Array.from(byCod.values());
             })()
           : [];
-    const empresasInternasNomes = empresaSelecionada
-      ? empresaSelecionada.nome_curto
-      : empresasFiltradas.map((e) => e.nome_curto).join(", ");
+    const empresasInternasNomes = empresasSelecionadas.map((e) => e.nome_curto).join(", ");
     const res = await fetch("/api/email/enviar", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -1120,7 +1151,7 @@ export default function DashboardPage() {
         config_email_id: configEmailId,
         empresa_ids: contextEmpresaIds,
         grupo_id: grupoId || null,
-        empresa_id: empresaSelecionada?.id || null,
+        empresa_id: empresaIdUnicaSelecionada,
         to_emails: emailsDestinatarios,
         subject: assuntoEmail,
         body_html: bodyHtml,
@@ -1166,9 +1197,7 @@ export default function DashboardPage() {
     return [];
   }
 
-  const empresasInternasNomesStr = empresaSelecionada
-    ? empresaSelecionada.nome_curto
-    : empresasFiltradas.map((e) => e.nome_curto).join(", ");
+  const empresasInternasNomesStr = empresasSelecionadas.map((e) => e.nome_curto).join(", ");
 
   function soNumerosTelefone(s: string): string {
     return (s || "").replace(/\D/g, "");
@@ -1212,7 +1241,7 @@ export default function DashboardPage() {
         grupo_nome: cliente.grupo_nome,
         empresas_internas_nomes: empresasInternasNomesStr || null,
         grupo_id: grupoId || null,
-        empresa_id: empresaSelecionada?.id || null,
+        empresa_id: empresaIdUnicaSelecionada,
         data_contato: ligacaoDataContato,
         telefone_contato: tel.valor!,
         telefone_tipo: ligacaoTelefoneTipo!,
@@ -1269,7 +1298,7 @@ export default function DashboardPage() {
         grupo_nome: cliente.grupo_nome,
         empresas_internas_nomes: empresasInternasNomesStr || null,
         grupo_id: grupoId || null,
-        empresa_id: empresaSelecionada?.id || null,
+        empresa_id: empresaIdUnicaSelecionada,
         data_contato: whatsappDataContato,
         telefone_contato: tel.valor!,
         telefone_tipo: whatsappTelefoneTipo!,
@@ -1458,22 +1487,67 @@ export default function DashboardPage() {
           </select>
         </div>
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">
+          <span className="block text-sm font-medium text-slate-700 mb-1">
             2. Empresa
-          </label>
-          <select
-            value={empresaId}
-            onChange={(e) => setEmpresaId(e.target.value)}
-            className="px-4 py-2 border rounded bg-white min-w-[200px]"
-            disabled={!grupoId}
+          </span>
+          <div
+            ref={filtroEmpresaRef}
+            className={`relative border border-slate-300 rounded bg-white min-w-[220px] ${!grupoId ? "opacity-60" : ""}`}
           >
-            <option value="">Todas as empresas do grupo</option>
-            {empresasFiltradas.map((e) => (
-              <option key={e.id} value={e.id}>
-                {e.nome_curto}
-              </option>
-            ))}
-          </select>
+            <button
+              type="button"
+              aria-expanded={filtroEmpresaPainelAberto}
+              aria-haspopup="listbox"
+              disabled={!grupoId}
+              onClick={() => setFiltroEmpresaPainelAberto((aberto) => !aberto)}
+              className="w-full text-left cursor-pointer px-4 py-2 pr-8 text-sm text-slate-800 hover:bg-slate-50 rounded disabled:cursor-not-allowed"
+            >
+              <span
+                className="block truncate max-w-[240px]"
+                title={nomesCurtosSelecionados.join(", ") || "Nenhuma empresa selecionada"}
+              >
+                {!grupoId
+                  ? "Selecione o grupo primeiro"
+                  : todasEmpresasMarcadas
+                    ? `Todas as empresas (${empresasFiltradas.length})`
+                    : empresasSelecionadas.length === 0
+                      ? "Nenhuma empresa selecionada"
+                      : `${empresasSelecionadas.length} de ${empresasFiltradas.length} empresas`}
+              </span>
+            </button>
+            {filtroEmpresaPainelAberto && grupoId ? (
+              <div className="absolute left-0 top-full mt-1 z-50 min-w-full max-h-64 overflow-y-auto rounded border border-slate-200 bg-white py-2 shadow-lg">
+                <label className="flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer hover:bg-slate-50 font-medium">
+                  <input
+                    type="checkbox"
+                    checked={todasEmpresasMarcadas}
+                    onChange={() =>
+                      setEmpresasSelecionadasIds(
+                        todasEmpresasMarcadas ? [] : empresasFiltradas.map((e) => e.id)
+                      )
+                    }
+                    className="rounded border-slate-300"
+                  />
+                  <span>Marcar todas</span>
+                </label>
+                <div className="border-t border-slate-100 my-1" />
+                {empresasFiltradas.map((e) => (
+                  <label
+                    key={e.id}
+                    className="flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer hover:bg-slate-50"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={empresasSelecionadasIds.includes(e.id)}
+                      onChange={() => toggleEmpresaSelecionada(e.id)}
+                      className="rounded border-slate-300"
+                    />
+                    <span>{e.nome_curto}</span>
+                  </label>
+                ))}
+              </div>
+            ) : null}
+          </div>
         </div>
         <button
           type="button"
