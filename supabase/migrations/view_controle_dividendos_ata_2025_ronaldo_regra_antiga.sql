@@ -4,7 +4,7 @@
 -- A regra geral de abr/2026+ (com saldo ATA e total <= limite, baixa primeiro da Ata)
 -- continua valendo para os demais médicos. Exceções do Rafael e do Bruno preservadas.
 
-CREATE OR REPLACE VIEW view_controle_dividendos_ata_2025 AS
+CREATE OR REPLACE VIEW view_controle_dividendos_ata_2025 WITH (security_invoker = true) AS
 WITH RECURSIVE iris_id AS (
   SELECT '1012591f-e0c0-414a-b739-33224aa6290e'::UUID AS id
 ),
