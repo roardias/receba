@@ -56,6 +56,9 @@ export default function HistoricoCobrancasPage() {
   const { hasPermissao, user } = useAuth();
   const [busca, setBusca] = useState("");
   const [buscaDebounced, setBuscaDebounced] = useState("");
+  /** Filtro por Data contato (aplica na tabela e na exportação). Vazio = sem limite. */
+  const [filtroDataDe, setFiltroDataDe] = useState("");
+  const [filtroDataAte, setFiltroDataAte] = useState("");
   const [cobrancas, setCobrancas] = useState<Cobranca[]>([]);
   const [loading, setLoading] = useState(true);
   const [allowedGrupoIds, setAllowedGrupoIds] = useState<Set<string>>(new Set());
@@ -209,6 +212,51 @@ export default function HistoricoCobrancasPage() {
     );
   }
 
+  /** Data efetiva do contato (mesma regra da coluna da tabela: data_contato ou data de criação). */
+  function dataEfetiva(c: Cobranca): string {
+    return (c.data_contato || c.created_at).slice(0, 10);
+  }
+
+  const cobrancasVisiveis = useMemo(() => {
+    if (!filtroDataDe && !filtroDataAte) return cobrancas;
+    return cobrancas.filter((c) => {
+      const d = dataEfetiva(c);
+      if (filtroDataDe && d < filtroDataDe) return false;
+      if (filtroDataAte && d > filtroDataAte) return false;
+      return true;
+    });
+  }, [cobrancas, filtroDataDe, filtroDataAte]);
+
+  function exportarCsv() {
+    const sep = ";";
+    const esc = (v: string) => `"${(v || "").replace(/"/g, '""')}"`;
+    const cabecalho = ["Grupo", "Cliente", "CNPJ/CPF", "Telefone", "Data contato", "Forma de contato", "Observação"];
+    const linhas = [
+      cabecalho.map(esc).join(sep),
+      ...cobrancasVisiveis.map((c) => {
+        const tel = formataTelefone(c.telefone_contato);
+        return [
+          c.grupo_nome ?? "",
+          c.cliente_nome ?? "",
+          c.cnpj_cpf ?? "",
+          tel === "—" ? "" : tel,
+          formataData(c.data_contato || c.created_at),
+          formaContato(c.tipo),
+          c.observacao ?? "",
+        ].map(esc).join(sep);
+      }),
+    ];
+    // BOM (\uFEFF) para o Excel abrir os acentos corretamente; separador ";" abre em colunas no Excel BR
+    const blob = new Blob(["\uFEFF" + linhas.join("\r\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const sufixo = filtroDataDe || filtroDataAte ? `_${filtroDataDe || "inicio"}_a_${filtroDataAte || "hoje"}` : "";
+    a.href = url;
+    a.download = `historico-cobrancas${sufixo}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   function iniciarEditarObs(c: Cobranca) {
     setEditingObsId(c.id);
     setEditingObsValue(c.observacao ?? "");
@@ -258,10 +306,48 @@ export default function HistoricoCobrancasPage() {
             className="px-4 py-2 border rounded bg-white min-w-[260px]"
           />
         </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Data contato — de</label>
+          <input
+            type="date"
+            value={filtroDataDe}
+            max={filtroDataAte || undefined}
+            onChange={(e) => setFiltroDataDe(e.target.value)}
+            className="px-4 py-2 border rounded bg-white"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Data contato — até</label>
+          <input
+            type="date"
+            value={filtroDataAte}
+            min={filtroDataDe || undefined}
+            onChange={(e) => setFiltroDataAte(e.target.value)}
+            className="px-4 py-2 border rounded bg-white"
+          />
+        </div>
+        {(filtroDataDe || filtroDataAte) && (
+          <button
+            type="button"
+            onClick={() => { setFiltroDataDe(""); setFiltroDataAte(""); }}
+            className="px-3 py-2 text-sm text-slate-600 rounded hover:bg-slate-200"
+          >
+            Limpar datas
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={exportarCsv}
+          disabled={cobrancasVisiveis.length === 0}
+          className="px-4 py-2 rounded bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 disabled:opacity-50"
+          title="Exporta para CSV os registros visíveis (respeita a busca e o filtro de datas)."
+        >
+          Exportar CSV ({cobrancasVisiveis.length})
+        </button>
       </div>
 
       <div className="mt-6">
-        {cobrancas.length === 0 ? (
+        {cobrancasVisiveis.length === 0 ? (
           <p className="text-slate-500">Nenhuma cobrança encontrada.</p>
         ) : (
           <div className="overflow-auto max-h-[calc(100vh-16rem)] border rounded bg-white">
@@ -278,7 +364,7 @@ export default function HistoricoCobrancasPage() {
                 </tr>
               </thead>
               <tbody>
-                {cobrancas.map((c) => (
+                {cobrancasVisiveis.map((c) => (
                   <tr key={c.id} className="border-t border-slate-100 hover:bg-slate-50">
                     <td className="p-2 text-slate-600">{c.grupo_nome ?? "—"}</td>
                     <td className="p-2 text-slate-800">
