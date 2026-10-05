@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -59,6 +59,13 @@ export default function HistoricoCobrancasPage() {
   /** Filtro por Data contato (aplica na tabela e na exportação). Vazio = sem limite. */
   const [filtroDataDe, setFiltroDataDe] = useState("");
   const [filtroDataAte, setFiltroDataAte] = useState("");
+  /** Filtro por grupo/empresas (mesmo padrão da Relação de Inadimplentes). */
+  const [gruposLista, setGruposLista] = useState<{ id: string; nome: string }[]>([]);
+  const [empresasLista, setEmpresasLista] = useState<{ id: string; nome_curto: string; grupo_id: string | null }[]>([]);
+  const [filtroGrupoId, setFiltroGrupoId] = useState("");
+  const [empresasSelecionadasIds, setEmpresasSelecionadasIds] = useState<string[]>([]);
+  const [filtroEmpresaPainelAberto, setFiltroEmpresaPainelAberto] = useState(false);
+  const filtroEmpresaRef = useRef<HTMLDivElement>(null);
   const [cobrancas, setCobrancas] = useState<Cobranca[]>([]);
   const [loading, setLoading] = useState(true);
   const [allowedGrupoIds, setAllowedGrupoIds] = useState<Set<string>>(new Set());
@@ -97,6 +104,74 @@ export default function HistoricoCobrancasPage() {
     })();
     return () => { cancelled = true; };
   }, [user?.id]);
+
+  // Carrega grupos/empresas para o filtro, respeitando a visibilidade (mesma regra da Relação de Inadimplentes)
+  useEffect(() => {
+    if (!visibilidadeCarregada) return;
+    let cancelled = false;
+    (async () => {
+      const [resG, resE] = await Promise.all([
+        supabase.from("grupos").select("id, nome").order("nome"),
+        supabase.from("empresas").select("id, nome_curto, grupo_id").order("nome_curto"),
+      ]);
+      if (cancelled) return;
+      const gruposAll = (resG.data || []) as { id: string; nome: string }[];
+      const empresasAll = (resE.data || []) as { id: string; nome_curto: string; grupo_id: string | null }[];
+      const gIds = allowedGrupoIds.size > 0 ? allowedGrupoIds : null;
+      const eIds = allowedEmpresaIds.size > 0 ? allowedEmpresaIds : null;
+      setGruposLista(gIds ? gruposAll.filter((g) => gIds.has(g.id)) : gruposAll);
+      setEmpresasLista(
+        gIds && eIds
+          ? empresasAll.filter((e) => (e.grupo_id != null && gIds.has(e.grupo_id)) || eIds.has(e.id))
+          : gIds
+            ? empresasAll.filter((e) => e.grupo_id != null && gIds.has(e.grupo_id))
+            : eIds
+              ? empresasAll.filter((e) => eIds.has(e.id))
+              : empresasAll
+      );
+    })();
+    return () => { cancelled = true; };
+  }, [visibilidadeCarregada, allowedGrupoIds, allowedEmpresaIds]);
+
+  const empresasDoGrupo = useMemo(
+    () => (filtroGrupoId ? empresasLista.filter((e) => e.grupo_id === filtroGrupoId) : []),
+    [empresasLista, filtroGrupoId]
+  );
+
+  // Ao escolher/trocar o grupo, todas as empresas dele vêm marcadas (padrão)
+  useEffect(() => {
+    setEmpresasSelecionadasIds(
+      filtroGrupoId ? empresasLista.filter((e) => e.grupo_id === filtroGrupoId).map((e) => e.id) : []
+    );
+  }, [filtroGrupoId, empresasLista]);
+
+  const empresasSelecionadas = empresasDoGrupo.filter((e) => empresasSelecionadasIds.includes(e.id));
+  const todasEmpresasMarcadas = empresasDoGrupo.length > 0 && empresasSelecionadas.length === empresasDoGrupo.length;
+
+  function toggleEmpresaSelecionada(id: string) {
+    setEmpresasSelecionadasIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  }
+
+  // Fecha o painel de empresas ao clicar fora ou apertar Esc
+  useEffect(() => {
+    if (!filtroEmpresaPainelAberto) return;
+    function handlePointerDown(e: PointerEvent) {
+      const root = filtroEmpresaRef.current;
+      if (!root || root.contains(e.target as Node)) return;
+      setFiltroEmpresaPainelAberto(false);
+    }
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setFiltroEmpresaPainelAberto(false);
+    }
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    document.addEventListener("keydown", handleKeyDown, true);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown, true);
+      document.removeEventListener("keydown", handleKeyDown, true);
+    };
+  }, [filtroEmpresaPainelAberto]);
 
   // Debounce da busca: só atualiza após 500ms sem digitar (evita consulta a cada letra)
   useEffect(() => {
@@ -218,14 +293,30 @@ export default function HistoricoCobrancasPage() {
   }
 
   const cobrancasVisiveis = useMemo(() => {
-    if (!filtroDataDe && !filtroDataAte) return cobrancas;
+    // Empresa do registro: pelo empresa_id (quando 1 só foi selecionada ao registrar)
+    // ou pelos nomes em empresas_internas_nomes (lista separada por vírgula).
+    const nomesSelecionados = new Set(
+      empresasSelecionadas.map((e) => e.nome_curto.trim().toLowerCase())
+    );
+    const idsSelecionados = new Set(empresasSelecionadas.map((e) => e.id));
+    const filtrarPorEmpresa = !!filtroGrupoId && !todasEmpresasMarcadas;
+
     return cobrancas.filter((c) => {
       const d = dataEfetiva(c);
       if (filtroDataDe && d < filtroDataDe) return false;
       if (filtroDataAte && d > filtroDataAte) return false;
+      if (filtroGrupoId && c.grupo_id !== filtroGrupoId) return false;
+      if (filtrarPorEmpresa) {
+        if (c.empresa_id && idsSelecionados.has(c.empresa_id)) return true;
+        const nomesDoRegistro = (c.empresas_internas_nomes || "")
+          .split(",")
+          .map((s) => s.trim().toLowerCase())
+          .filter(Boolean);
+        return nomesDoRegistro.some((n) => nomesSelecionados.has(n));
+      }
       return true;
     });
-  }, [cobrancas, filtroDataDe, filtroDataAte]);
+  }, [cobrancas, filtroDataDe, filtroDataAte, filtroGrupoId, todasEmpresasMarcadas, empresasSelecionadas]);
 
   function exportarCsv() {
     const sep = ";";
@@ -305,6 +396,82 @@ export default function HistoricoCobrancasPage() {
             placeholder="Cliente, código ou grupo"
             className="px-4 py-2 border rounded bg-white min-w-[260px]"
           />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Grupo</label>
+          <select
+            value={filtroGrupoId}
+            onChange={(e) => { setFiltroGrupoId(e.target.value); setFiltroEmpresaPainelAberto(false); }}
+            className="px-4 py-2 border rounded bg-white min-w-[180px]"
+          >
+            <option value="">Todos os grupos</option>
+            {gruposLista.map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.nome}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <span className="block text-sm font-medium text-slate-700 mb-1">Empresa</span>
+          <div
+            ref={filtroEmpresaRef}
+            className={`relative border border-slate-300 rounded bg-white min-w-[220px] ${!filtroGrupoId ? "opacity-60" : ""}`}
+          >
+            <button
+              type="button"
+              aria-expanded={filtroEmpresaPainelAberto}
+              aria-haspopup="listbox"
+              disabled={!filtroGrupoId}
+              onClick={() => setFiltroEmpresaPainelAberto((aberto) => !aberto)}
+              className="w-full text-left cursor-pointer px-4 py-2 pr-8 text-sm text-slate-800 hover:bg-slate-50 rounded disabled:cursor-not-allowed"
+            >
+              <span
+                className="block truncate max-w-[240px]"
+                title={empresasSelecionadas.map((e) => e.nome_curto).join(", ") || "Nenhuma empresa selecionada"}
+              >
+                {!filtroGrupoId
+                  ? "Selecione o grupo primeiro"
+                  : todasEmpresasMarcadas
+                    ? `Todas as empresas (${empresasDoGrupo.length})`
+                    : empresasSelecionadas.length === 0
+                      ? "Nenhuma empresa selecionada"
+                      : `${empresasSelecionadas.length} de ${empresasDoGrupo.length} empresas`}
+              </span>
+            </button>
+            {filtroEmpresaPainelAberto && filtroGrupoId ? (
+              <div className="absolute left-0 top-full mt-1 z-50 min-w-full max-h-64 overflow-y-auto rounded border border-slate-200 bg-white py-2 shadow-lg">
+                <label className="flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer hover:bg-slate-50 font-medium">
+                  <input
+                    type="checkbox"
+                    checked={todasEmpresasMarcadas}
+                    onChange={() =>
+                      setEmpresasSelecionadasIds(
+                        todasEmpresasMarcadas ? [] : empresasDoGrupo.map((e) => e.id)
+                      )
+                    }
+                    className="rounded border-slate-300"
+                  />
+                  <span>Marcar todas</span>
+                </label>
+                <div className="border-t border-slate-100 my-1" />
+                {empresasDoGrupo.map((e) => (
+                  <label
+                    key={e.id}
+                    className="flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer hover:bg-slate-50"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={empresasSelecionadasIds.includes(e.id)}
+                      onChange={() => toggleEmpresaSelecionada(e.id)}
+                      className="rounded border-slate-300"
+                    />
+                    <span>{e.nome_curto}</span>
+                  </label>
+                ))}
+              </div>
+            ) : null}
+          </div>
         </div>
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Data contato — de</label>
