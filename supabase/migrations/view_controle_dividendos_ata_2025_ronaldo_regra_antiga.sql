@@ -1,10 +1,15 @@
--- Exceção: os médicos abaixo mantêm a REGRA ANTIGA (anterior a abr/2026): primeiro
--- Baixa Competência (até o limite do mês) e só o excedente vai para Baixa Ata 2025.
+-- Exceção "REGRA ANTIGA" (anterior a abr/2026): para os médicos listados no flag
+-- regra_antiga (CTE ordenado), a baixa é SEMPRE primeiro pela Competência (até o
+-- limite do mês) e só o excedente baixa da Ata 2025 — inclusive no mês em que o
+-- saldo restante fica abaixo do limite (não se aplica a regra de encerramento que
+-- zera o saldo de uma vez; o que sobrar fica para os meses seguintes).
+-- Médicos na regra antiga:
 --   Ronaldo Rodrigues da Cunha, Guilherme Benevenuto, Silvia Regina Costa Crispim de Sousa,
 --   Leandro Cesar Cotta, Paulo Cesar Montalvão de Albuquerque,
 --   Ramon Carlos Martins Barreto Neto, Jose Cardoso Leão Filho.
--- A regra geral de abr/2026+ (com saldo ATA e total <= limite, baixa primeiro da Ata)
--- continua valendo para os demais médicos. Exceções do Rafael e do Bruno preservadas.
+-- Demais médicos: regra geral de abr/2026+ (com saldo ATA, baixa primeiro da Ata
+-- quando o total do mês está dentro do limite). Exceções pontuais de abr/26
+-- (Rafael: limite 89.157,03; Bruno: baixa fixa 152.910,64) preservadas.
 
 CREATE OR REPLACE VIEW view_controle_dividendos_ata_2025 WITH (security_invoker = true) AS
 WITH RECURSIVE iris_id AS (
@@ -78,7 +83,17 @@ ordenado AS (
       WHEN d.nome = 'Rafael Eidi Yamamoto' AND t.ano = 2026 AND t.mes = 4 THEN 89157.03::NUMERIC(20,2)
       WHEN t.ano > 2026 OR (t.ano = 2026 AND t.mes >= 2) THEN 48000::NUMERIC(20,2)
       ELSE 50000::NUMERIC(20,2)
-    END AS limite_regra
+    END AS limite_regra,
+    -- Médicos que mantêm a REGRA ANTIGA (competência primeiro, sempre)
+    (
+      d.nome ILIKE 'Ronaldo Rodrigues da Cunha'
+      OR d.nome ILIKE 'Guilherme Benevenuto%'
+      OR d.nome ILIKE 'Silvia Regina Costa Crispim%'
+      OR d.nome ILIKE 'Leandro Cesar Cotta%'
+      OR d.nome ILIKE 'Paulo Cesar Montalv%'
+      OR d.nome ILIKE 'Ramon Carlos Martins Barreto%'
+      OR d.nome ILIKE '%Cardoso Le_o Filho%'
+    ) AS regra_antiga
   FROM totais_mes t
   INNER JOIN (SELECT cpf, nome, valor_ata FROM dividendos_ata_2025 WHERE empresa_id = (SELECT id FROM iris_id)) d ON d.cpf = t.cpf
 ),
@@ -93,16 +108,13 @@ rec AS (
     (CASE
       WHEN o.valor_ata = 1000 THEN (o.total_pago_mes - LEAST(o.total_pago_mes, o.valor_ata))::NUMERIC(20,2)
       WHEN (o.ano > 2026 OR (o.ano = 2026 AND o.mes >= 4))
-        AND o.nome NOT ILIKE 'Ronaldo Rodrigues da Cunha'
-        AND o.nome NOT ILIKE 'Guilherme Benevenuto%'
-        AND o.nome NOT ILIKE 'Silvia Regina Costa Crispim%'
-        AND o.nome NOT ILIKE 'Leandro Cesar Cotta%'
-        AND o.nome NOT ILIKE 'Paulo Cesar Montalv%'
-        AND o.nome NOT ILIKE 'Ramon Carlos Martins Barreto%'
-        AND o.nome NOT ILIKE '%Cardoso Le_o Filho%'
+        AND NOT o.regra_antiga
         AND o.valor_ata > 0
         AND o.total_pago_mes <= o.limite_regra
         THEN (o.total_pago_mes - LEAST(o.total_pago_mes, o.valor_ata))::NUMERIC(20,2)
+      -- Regra antiga: competência até o limite; excedente baixa da Ata (limitado ao saldo)
+      WHEN o.regra_antiga AND o.total_pago_mes > o.limite_regra AND o.valor_ata > 0
+        THEN o.limite_regra::NUMERIC(20,2)
       WHEN o.total_pago_mes > o.limite_regra AND o.valor_ata > o.limite_regra THEN o.limite_regra::NUMERIC(20,2)
       WHEN o.total_pago_mes > o.limite_regra AND o.valor_ata <= o.limite_regra AND o.valor_ata > 0 THEN (o.total_pago_mes - o.valor_ata)::NUMERIC(20,2)
       ELSE o.total_pago_mes::NUMERIC(20,2)
@@ -110,16 +122,12 @@ rec AS (
     (CASE
       WHEN o.valor_ata = 1000 THEN LEAST(o.total_pago_mes, o.valor_ata)::NUMERIC(20,2)
       WHEN (o.ano > 2026 OR (o.ano = 2026 AND o.mes >= 4))
-        AND o.nome NOT ILIKE 'Ronaldo Rodrigues da Cunha'
-        AND o.nome NOT ILIKE 'Guilherme Benevenuto%'
-        AND o.nome NOT ILIKE 'Silvia Regina Costa Crispim%'
-        AND o.nome NOT ILIKE 'Leandro Cesar Cotta%'
-        AND o.nome NOT ILIKE 'Paulo Cesar Montalv%'
-        AND o.nome NOT ILIKE 'Ramon Carlos Martins Barreto%'
-        AND o.nome NOT ILIKE '%Cardoso Le_o Filho%'
+        AND NOT o.regra_antiga
         AND o.valor_ata > 0
         AND o.total_pago_mes <= o.limite_regra
         THEN LEAST(o.total_pago_mes, o.valor_ata)::NUMERIC(20,2)
+      WHEN o.regra_antiga AND o.total_pago_mes > o.limite_regra AND o.valor_ata > 0
+        THEN LEAST(o.total_pago_mes - o.limite_regra, o.valor_ata)::NUMERIC(20,2)
       WHEN o.total_pago_mes > o.limite_regra AND o.valor_ata > o.limite_regra THEN LEAST(o.total_pago_mes - o.limite_regra, o.valor_ata)::NUMERIC(20,2)
       WHEN o.total_pago_mes > o.limite_regra AND o.valor_ata <= o.limite_regra AND o.valor_ata > 0 THEN o.valor_ata::NUMERIC(20,2)
       ELSE 0::NUMERIC(20,2)
@@ -127,16 +135,12 @@ rec AS (
     (CASE
       WHEN o.valor_ata = 1000 THEN (o.valor_ata - LEAST(o.total_pago_mes, o.valor_ata))::NUMERIC(20,2)
       WHEN (o.ano > 2026 OR (o.ano = 2026 AND o.mes >= 4))
-        AND o.nome NOT ILIKE 'Ronaldo Rodrigues da Cunha'
-        AND o.nome NOT ILIKE 'Guilherme Benevenuto%'
-        AND o.nome NOT ILIKE 'Silvia Regina Costa Crispim%'
-        AND o.nome NOT ILIKE 'Leandro Cesar Cotta%'
-        AND o.nome NOT ILIKE 'Paulo Cesar Montalv%'
-        AND o.nome NOT ILIKE 'Ramon Carlos Martins Barreto%'
-        AND o.nome NOT ILIKE '%Cardoso Le_o Filho%'
+        AND NOT o.regra_antiga
         AND o.valor_ata > 0
         AND o.total_pago_mes <= o.limite_regra
         THEN (o.valor_ata - LEAST(o.total_pago_mes, o.valor_ata))::NUMERIC(20,2)
+      WHEN o.regra_antiga AND o.total_pago_mes > o.limite_regra AND o.valor_ata > 0
+        THEN GREATEST(0, o.valor_ata - LEAST(o.total_pago_mes - o.limite_regra, o.valor_ata))::NUMERIC(20,2)
       WHEN o.total_pago_mes > o.limite_regra AND o.valor_ata > o.limite_regra THEN GREATEST(0, o.valor_ata - LEAST(o.total_pago_mes - o.limite_regra, o.valor_ata))::NUMERIC(20,2)
       WHEN o.total_pago_mes > o.limite_regra AND o.valor_ata <= o.limite_regra AND o.valor_ata > 0 THEN 0::NUMERIC(20,2)
       ELSE o.valor_ata::NUMERIC(20,2)
@@ -158,16 +162,14 @@ rec AS (
         THEN GREATEST(0, o.total_pago_mes - 152910.64)::NUMERIC(20,2)
       WHEN o.valor_ata = 1000 AND r.saldo_ata_final > 0 THEN (o.total_pago_mes - LEAST(o.total_pago_mes, r.saldo_ata_final))::NUMERIC(20,2)
       WHEN (o.ano > 2026 OR (o.ano = 2026 AND o.mes >= 4))
-        AND o.nome NOT ILIKE 'Ronaldo Rodrigues da Cunha'
-        AND o.nome NOT ILIKE 'Guilherme Benevenuto%'
-        AND o.nome NOT ILIKE 'Silvia Regina Costa Crispim%'
-        AND o.nome NOT ILIKE 'Leandro Cesar Cotta%'
-        AND o.nome NOT ILIKE 'Paulo Cesar Montalv%'
-        AND o.nome NOT ILIKE 'Ramon Carlos Martins Barreto%'
-        AND o.nome NOT ILIKE '%Cardoso Le_o Filho%'
+        AND NOT o.regra_antiga
         AND r.saldo_ata_final > 0
         AND o.total_pago_mes <= o.limite_regra
         THEN (o.total_pago_mes - LEAST(o.total_pago_mes, r.saldo_ata_final))::NUMERIC(20,2)
+      -- Regra antiga: competência até o limite; excedente baixa da Ata (limitado ao saldo);
+      -- NÃO aplica o encerramento que zera o saldo de uma vez quando ele cabe no mês.
+      WHEN o.regra_antiga AND o.total_pago_mes > o.limite_regra AND r.saldo_ata_final > 0
+        THEN o.limite_regra::NUMERIC(20,2)
       WHEN o.total_pago_mes > o.limite_regra AND r.saldo_ata_final > o.limite_regra THEN o.limite_regra::NUMERIC(20,2)
       WHEN o.total_pago_mes > o.limite_regra AND r.saldo_ata_final <= o.limite_regra AND r.saldo_ata_final > 0 THEN (o.total_pago_mes - r.saldo_ata_final)::NUMERIC(20,2)
       ELSE o.total_pago_mes::NUMERIC(20,2)
@@ -178,16 +180,12 @@ rec AS (
         THEN LEAST(152910.64::NUMERIC(20,2), r.saldo_ata_final)::NUMERIC(20,2)
       WHEN o.valor_ata = 1000 AND r.saldo_ata_final > 0 THEN LEAST(o.total_pago_mes, r.saldo_ata_final)::NUMERIC(20,2)
       WHEN (o.ano > 2026 OR (o.ano = 2026 AND o.mes >= 4))
-        AND o.nome NOT ILIKE 'Ronaldo Rodrigues da Cunha'
-        AND o.nome NOT ILIKE 'Guilherme Benevenuto%'
-        AND o.nome NOT ILIKE 'Silvia Regina Costa Crispim%'
-        AND o.nome NOT ILIKE 'Leandro Cesar Cotta%'
-        AND o.nome NOT ILIKE 'Paulo Cesar Montalv%'
-        AND o.nome NOT ILIKE 'Ramon Carlos Martins Barreto%'
-        AND o.nome NOT ILIKE '%Cardoso Le_o Filho%'
+        AND NOT o.regra_antiga
         AND r.saldo_ata_final > 0
         AND o.total_pago_mes <= o.limite_regra
         THEN LEAST(o.total_pago_mes, r.saldo_ata_final)::NUMERIC(20,2)
+      WHEN o.regra_antiga AND o.total_pago_mes > o.limite_regra AND r.saldo_ata_final > 0
+        THEN LEAST(o.total_pago_mes - o.limite_regra, r.saldo_ata_final)::NUMERIC(20,2)
       WHEN o.total_pago_mes > o.limite_regra AND r.saldo_ata_final > o.limite_regra THEN LEAST(o.total_pago_mes - o.limite_regra, r.saldo_ata_final)::NUMERIC(20,2)
       WHEN o.total_pago_mes > o.limite_regra AND r.saldo_ata_final <= o.limite_regra AND r.saldo_ata_final > 0 THEN r.saldo_ata_final::NUMERIC(20,2)
       ELSE 0::NUMERIC(20,2)
@@ -198,16 +196,12 @@ rec AS (
         THEN GREATEST(0, r.saldo_ata_final - LEAST(152910.64::NUMERIC(20,2), r.saldo_ata_final))::NUMERIC(20,2)
       WHEN o.valor_ata = 1000 AND r.saldo_ata_final > 0 THEN (r.saldo_ata_final - LEAST(o.total_pago_mes, r.saldo_ata_final))::NUMERIC(20,2)
       WHEN (o.ano > 2026 OR (o.ano = 2026 AND o.mes >= 4))
-        AND o.nome NOT ILIKE 'Ronaldo Rodrigues da Cunha'
-        AND o.nome NOT ILIKE 'Guilherme Benevenuto%'
-        AND o.nome NOT ILIKE 'Silvia Regina Costa Crispim%'
-        AND o.nome NOT ILIKE 'Leandro Cesar Cotta%'
-        AND o.nome NOT ILIKE 'Paulo Cesar Montalv%'
-        AND o.nome NOT ILIKE 'Ramon Carlos Martins Barreto%'
-        AND o.nome NOT ILIKE '%Cardoso Le_o Filho%'
+        AND NOT o.regra_antiga
         AND r.saldo_ata_final > 0
         AND o.total_pago_mes <= o.limite_regra
         THEN (r.saldo_ata_final - LEAST(o.total_pago_mes, r.saldo_ata_final))::NUMERIC(20,2)
+      WHEN o.regra_antiga AND o.total_pago_mes > o.limite_regra AND r.saldo_ata_final > 0
+        THEN GREATEST(0, r.saldo_ata_final - LEAST(o.total_pago_mes - o.limite_regra, r.saldo_ata_final))::NUMERIC(20,2)
       WHEN o.total_pago_mes > o.limite_regra AND r.saldo_ata_final > o.limite_regra THEN GREATEST(0, r.saldo_ata_final - LEAST(o.total_pago_mes - o.limite_regra, r.saldo_ata_final))::NUMERIC(20,2)
       WHEN o.total_pago_mes > o.limite_regra AND r.saldo_ata_final <= o.limite_regra AND r.saldo_ata_final > 0 THEN 0::NUMERIC(20,2)
       ELSE r.saldo_ata_final::NUMERIC(20,2)
@@ -240,7 +234,7 @@ WHERE c.saldo_ata_inicial > 0
 ORDER BY det.nome, det.ano, det.mes;
 
 COMMENT ON VIEW view_controle_dividendos_ata_2025 IS
-  'Controle até zerar saldo ata 2025 (Iris). A partir de abr/26, com saldo ATA, baixa usa o valor do mês até zerar (inclusive abaixo do limite). Exceções pontuais: Rafael e Bruno (abr/26). Regra antiga (competência primeiro): Ronaldo Rodrigues da Cunha, Guilherme Benevenuto, Silvia Crispim de Sousa, Leandro Cesar Cotta, Paulo Cesar Montalvão, Ramon Barreto Neto e Jose Cardoso Leão Filho.';
+  'Controle até zerar saldo ata 2025 (Iris). Regra geral abr/26+: com saldo ATA e total dentro do limite, baixa primeiro da Ata. Regra antiga (competência primeiro, sempre — sem encerramento antecipado do saldo): Ronaldo Rodrigues da Cunha, Guilherme Benevenuto, Silvia Crispim de Sousa, Leandro Cesar Cotta, Paulo Cesar Montalvão, Ramon Barreto Neto e Jose Cardoso Leão Filho. Exceções pontuais abr/26: Rafael (limite 89.157,03) e Bruno (baixa fixa 152.910,64).';
 
 GRANT SELECT ON view_controle_dividendos_ata_2025 TO anon;
 GRANT SELECT ON view_controle_dividendos_ata_2025 TO service_role;

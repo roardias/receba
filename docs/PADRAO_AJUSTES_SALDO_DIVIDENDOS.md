@@ -32,7 +32,10 @@ Este arquivo registra excecoes de regra para manter historico e facilitar novos 
 - Regra aplicada:
   - mantem a REGRA ANTIGA (anterior a abr/2026): baixa primeiro pela Competencia (ate o limite do mes)
     e apenas o excedente vai para Baixa Ata 2025;
-  - ou seja, eles ficam FORA da regra geral de abr/2026+ de baixar primeiro pela Ata.
+  - ou seja, eles ficam FORA da regra geral de abr/2026+ de baixar primeiro pela Ata;
+  - desde 06/11/2026, tambem NAO se aplica a eles a regra de encerramento (que zerava o saldo de uma
+    vez no mes em que o saldo restante cabia dentro do limite) - a competencia vai ate o limite e o
+    saldo que sobrar fica para os meses seguintes.
 
 ## Onde a regra foi aplicada no codigo
 
