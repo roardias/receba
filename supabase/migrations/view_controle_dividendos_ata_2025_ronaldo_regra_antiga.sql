@@ -1,6 +1,8 @@
--- Exceção: Ronaldo Rodrigues da Cunha, Guilherme Benevenuto e Silvia Regina Costa
--- Crispim de Sousa mantêm a REGRA ANTIGA (anterior a abr/2026): primeiro Baixa
--- Competência (até o limite do mês) e só o excedente vai para Baixa Ata 2025.
+-- Exceção: os médicos abaixo mantêm a REGRA ANTIGA (anterior a abr/2026): primeiro
+-- Baixa Competência (até o limite do mês) e só o excedente vai para Baixa Ata 2025.
+--   Ronaldo Rodrigues da Cunha, Guilherme Benevenuto, Silvia Regina Costa Crispim de Sousa,
+--   Leandro Cesar Cotta, Paulo Cesar Montalvão de Albuquerque,
+--   Ramon Carlos Martins Barreto Neto, Jose Cardoso Leão Filho.
 -- A regra geral de abr/2026+ (com saldo ATA e total <= limite, baixa primeiro da Ata)
 -- continua valendo para os demais médicos. Exceções do Rafael e do Bruno preservadas.
 
@@ -94,6 +96,10 @@ rec AS (
         AND o.nome NOT ILIKE 'Ronaldo Rodrigues da Cunha'
         AND o.nome NOT ILIKE 'Guilherme Benevenuto%'
         AND o.nome NOT ILIKE 'Silvia Regina Costa Crispim%'
+        AND o.nome NOT ILIKE 'Leandro Cesar Cotta%'
+        AND o.nome NOT ILIKE 'Paulo Cesar Montalv%'
+        AND o.nome NOT ILIKE 'Ramon Carlos Martins Barreto%'
+        AND o.nome NOT ILIKE '%Cardoso Le_o Filho%'
         AND o.valor_ata > 0
         AND o.total_pago_mes <= o.limite_regra
         THEN (o.total_pago_mes - LEAST(o.total_pago_mes, o.valor_ata))::NUMERIC(20,2)
@@ -107,6 +113,10 @@ rec AS (
         AND o.nome NOT ILIKE 'Ronaldo Rodrigues da Cunha'
         AND o.nome NOT ILIKE 'Guilherme Benevenuto%'
         AND o.nome NOT ILIKE 'Silvia Regina Costa Crispim%'
+        AND o.nome NOT ILIKE 'Leandro Cesar Cotta%'
+        AND o.nome NOT ILIKE 'Paulo Cesar Montalv%'
+        AND o.nome NOT ILIKE 'Ramon Carlos Martins Barreto%'
+        AND o.nome NOT ILIKE '%Cardoso Le_o Filho%'
         AND o.valor_ata > 0
         AND o.total_pago_mes <= o.limite_regra
         THEN LEAST(o.total_pago_mes, o.valor_ata)::NUMERIC(20,2)
@@ -120,6 +130,10 @@ rec AS (
         AND o.nome NOT ILIKE 'Ronaldo Rodrigues da Cunha'
         AND o.nome NOT ILIKE 'Guilherme Benevenuto%'
         AND o.nome NOT ILIKE 'Silvia Regina Costa Crispim%'
+        AND o.nome NOT ILIKE 'Leandro Cesar Cotta%'
+        AND o.nome NOT ILIKE 'Paulo Cesar Montalv%'
+        AND o.nome NOT ILIKE 'Ramon Carlos Martins Barreto%'
+        AND o.nome NOT ILIKE '%Cardoso Le_o Filho%'
         AND o.valor_ata > 0
         AND o.total_pago_mes <= o.limite_regra
         THEN (o.valor_ata - LEAST(o.total_pago_mes, o.valor_ata))::NUMERIC(20,2)
@@ -147,6 +161,10 @@ rec AS (
         AND o.nome NOT ILIKE 'Ronaldo Rodrigues da Cunha'
         AND o.nome NOT ILIKE 'Guilherme Benevenuto%'
         AND o.nome NOT ILIKE 'Silvia Regina Costa Crispim%'
+        AND o.nome NOT ILIKE 'Leandro Cesar Cotta%'
+        AND o.nome NOT ILIKE 'Paulo Cesar Montalv%'
+        AND o.nome NOT ILIKE 'Ramon Carlos Martins Barreto%'
+        AND o.nome NOT ILIKE '%Cardoso Le_o Filho%'
         AND r.saldo_ata_final > 0
         AND o.total_pago_mes <= o.limite_regra
         THEN (o.total_pago_mes - LEAST(o.total_pago_mes, r.saldo_ata_final))::NUMERIC(20,2)
@@ -163,6 +181,10 @@ rec AS (
         AND o.nome NOT ILIKE 'Ronaldo Rodrigues da Cunha'
         AND o.nome NOT ILIKE 'Guilherme Benevenuto%'
         AND o.nome NOT ILIKE 'Silvia Regina Costa Crispim%'
+        AND o.nome NOT ILIKE 'Leandro Cesar Cotta%'
+        AND o.nome NOT ILIKE 'Paulo Cesar Montalv%'
+        AND o.nome NOT ILIKE 'Ramon Carlos Martins Barreto%'
+        AND o.nome NOT ILIKE '%Cardoso Le_o Filho%'
         AND r.saldo_ata_final > 0
         AND o.total_pago_mes <= o.limite_regra
         THEN LEAST(o.total_pago_mes, r.saldo_ata_final)::NUMERIC(20,2)
@@ -179,6 +201,10 @@ rec AS (
         AND o.nome NOT ILIKE 'Ronaldo Rodrigues da Cunha'
         AND o.nome NOT ILIKE 'Guilherme Benevenuto%'
         AND o.nome NOT ILIKE 'Silvia Regina Costa Crispim%'
+        AND o.nome NOT ILIKE 'Leandro Cesar Cotta%'
+        AND o.nome NOT ILIKE 'Paulo Cesar Montalv%'
+        AND o.nome NOT ILIKE 'Ramon Carlos Martins Barreto%'
+        AND o.nome NOT ILIKE '%Cardoso Le_o Filho%'
         AND r.saldo_ata_final > 0
         AND o.total_pago_mes <= o.limite_regra
         THEN (r.saldo_ata_final - LEAST(o.total_pago_mes, r.saldo_ata_final))::NUMERIC(20,2)
@@ -214,7 +240,7 @@ WHERE c.saldo_ata_inicial > 0
 ORDER BY det.nome, det.ano, det.mes;
 
 COMMENT ON VIEW view_controle_dividendos_ata_2025 IS
-  'Controle até zerar saldo ata 2025 (Iris). A partir de abr/26, com saldo ATA, baixa usa o valor do mês até zerar (inclusive abaixo do limite). Exceções: Rafael (abr/26), Bruno (abr/26), Ronaldo Rodrigues da Cunha, Guilherme Benevenuto e Silvia Regina Costa Crispim de Sousa (mantêm regra antiga: competência primeiro).';
+  'Controle até zerar saldo ata 2025 (Iris). A partir de abr/26, com saldo ATA, baixa usa o valor do mês até zerar (inclusive abaixo do limite). Exceções pontuais: Rafael e Bruno (abr/26). Regra antiga (competência primeiro): Ronaldo Rodrigues da Cunha, Guilherme Benevenuto, Silvia Crispim de Sousa, Leandro Cesar Cotta, Paulo Cesar Montalvão, Ramon Barreto Neto e Jose Cardoso Leão Filho.';
 
 GRANT SELECT ON view_controle_dividendos_ata_2025 TO anon;
 GRANT SELECT ON view_controle_dividendos_ata_2025 TO service_role;
