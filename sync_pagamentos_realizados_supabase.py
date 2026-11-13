@@ -239,17 +239,46 @@ def _registros_duplicados_no_lote(batch: list[dict]) -> list[dict]:
     return duplicados
 
 
+MARCADORES_FALHA_TRANSITORIA = (
+    "timed out",
+    "timeout",
+    "connection",
+    "temporarily",
+    "disconnected",
+    "remoteprotocolerror",
+    "reset by peer",
+    "broken pipe",
+    "eof occurred",
+    "bad gateway",
+    "service unavailable",
+    "gateway timeout",
+    "502",
+    "503",
+    "504",
+)
+MAX_TENTATIVAS_UPSERT = 5
+
+
+def _falha_transitoria(e: Exception) -> bool:
+    msg = f"{type(e).__name__} {e}".lower()
+    return any(m in msg for m in MARCADORES_FALHA_TRANSITORIA)
+
+
 def _upsert_lote_com_retry(supabase, batch: list[dict]):
-    """Upsert com retry apenas para falhas transitórias (timeout/conexão). Erro de dados estoura direto."""
-    for tentativa in range(1, 4):
+    """Upsert com retry apenas para falhas transitórias (timeout/conexão). Erro de dados estoura direto.
+    Repetir é seguro: o upsert com on_conflict é idempotente mesmo se o servidor gravou antes de cair."""
+    for tentativa in range(1, MAX_TENTATIVAS_UPSERT + 1):
         try:
             return supabase.table("pagamentos_realizados").upsert(batch, on_conflict=CONFLICT_COLUMNS).execute()
         except Exception as e:
-            msg = str(e).lower()
-            transitorio = "timed out" in msg or "timeout" in msg or "connection" in msg or "temporarily" in msg
-            if transitorio and tentativa < 3:
-                print(f"  [Pagamentos Realizados] Falha transitória no upsert (tentativa {tentativa}/3): {e}", flush=True)
-                time.sleep(10)
+            if _falha_transitoria(e) and tentativa < MAX_TENTATIVAS_UPSERT:
+                espera = 10 * tentativa
+                print(
+                    f"  [Pagamentos Realizados] Falha transitória no upsert (tentativa {tentativa}/{MAX_TENTATIVAS_UPSERT}), "
+                    f"nova tentativa em {espera}s: {e}",
+                    flush=True,
+                )
+                time.sleep(espera)
                 continue
             raise
 
